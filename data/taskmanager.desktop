@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Name=Task Manager
+GenericName=Task Manager
+Comment=Monitor processes, performance, services and startup programs
+Exec=taskmanager
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;Monitor;
+Keywords=process;task;monitor;cpu;memory;kill;
+Actions=Win7;Win8;
+
+[Desktop Action Win7]
+Name=Task Manager (Windows 7 layout)
+Exec=taskmanager --win7
+
+[Desktop Action Win8]
+Name=Task Manager (Windows 8 layout)
+Exec=taskmanager --win8

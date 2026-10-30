@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "taskmanager"
+dynamic = ["version"]
+description = "Windows 7 and Windows 8 style Task Manager for Linux, macOS and BSD"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "psutil>=5.9",
+    "PySide6-Essentials>=6.4",
+]
+classifiers = [
+    "Environment :: X11 Applications :: Qt",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: BSD",
+    "Topic :: System :: Monitoring",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.gui-scripts]
+taskmanager = "taskmanager.app:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "taskmanager.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["taskmanager*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
