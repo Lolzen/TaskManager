@@ -17,6 +17,13 @@ class Service:
     group: str = ""
     detail: str = ""  # backend specific state, e.g. "active (running)"
     startup: str = ""  # enabled / disabled / static ...
+    # Tux mode extras (systemd only)
+    sub_state: str = ""
+    type: str = ""
+    restarts: int = 0
+    memory: int = -1
+    tasks: int = -1
+    cpu_ns: int = -1
 
 
 class ServiceError(RuntimeError):
@@ -46,6 +53,11 @@ def parse_systemctl_show(text):
         active, sub = props.get("ActiveState", ""), props.get("SubState", "")
         pid = props.get("MainPID", "0")
         slice_name = props.get("Slice", "")
+
+        def num(key):
+            value = props.get(key, "")
+            # systemd prints UINT64_MAX or "[not set]" when accounting is off
+            return int(value) if value.isdigit() and int(value) < 2 ** 63 else -1
         services.append(Service(
             name=unit[: -len(".service")],
             description=props.get("Description", ""),
@@ -54,6 +66,12 @@ def parse_systemctl_show(text):
             group=slice_name[: -len(".slice")] if slice_name.endswith(".slice") else slice_name,
             detail="{} ({})".format(active, sub) if sub else active,
             startup=props.get("UnitFileState", ""),
+            sub_state=sub,
+            type=props.get("Type", ""),
+            restarts=max(0, num("NRestarts")),
+            memory=num("MemoryCurrent"),
+            tasks=num("TasksCurrent"),
+            cpu_ns=num("CPUUsageNSec"),
         ))
     services.sort(key=lambda s: s.name.lower())
     return services
@@ -86,7 +104,8 @@ def backend_name():
     return None
 
 
-_PROPS = "Id,Description,LoadState,ActiveState,SubState,MainPID,Slice,UnitFileState"
+_PROPS = "Id,Description,LoadState,ActiveState,SubState,MainPID,Slice,UnitFileState," \
+         "Type,NRestarts,MemoryCurrent,TasksCurrent,CPUUsageNSec"
 
 
 def list_services():

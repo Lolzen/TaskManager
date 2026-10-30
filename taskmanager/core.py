@@ -19,10 +19,12 @@ class _SamplerWorker(QtCore.QObject):
         super().__init__()
         self.sampler = None
         self.timer = None
+        self.tux = False
 
     @Slot()
     def start(self):
         self.sampler = Sampler()
+        self.sampler.tux = self.tux
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.tick()  # prime the counters so the first real sample has rates
@@ -36,6 +38,12 @@ class _SamplerWorker(QtCore.QObject):
             self.timer.stop()
         else:
             self.timer.start(msec)
+
+    @Slot(bool)
+    def set_tux(self, enabled):
+        self.tux = enabled
+        if self.sampler is not None:
+            self.sampler.tux = enabled
 
     @Slot()
     def shutdown(self):
@@ -60,6 +68,7 @@ class SamplerThread(QtCore.QObject):
 
     snapshot = Signal(object)
     _set_interval = Signal(int)
+    _set_tux = Signal(bool)
     _tick = Signal()
 
     def __init__(self, parent=None):
@@ -73,6 +82,7 @@ class SamplerThread(QtCore.QObject):
         self._worker.sampled.connect(self._on_sample)
         self._worker.failed.connect(sys.stderr.write)
         self._set_interval.connect(self._worker.set_interval)
+        self._set_tux.connect(self._worker.set_tux)
         self._tick.connect(self._worker.tick)
         self._thread.start()
         self.set_speed(self.speed)
@@ -84,6 +94,9 @@ class SamplerThread(QtCore.QObject):
     def set_speed(self, name):
         self.speed = name
         self._set_interval.emit(SPEEDS[name])
+
+    def set_tux(self, enabled):
+        self._set_tux.emit(enabled)
 
     def refresh_now(self):
         self._tick.emit()

@@ -7,6 +7,7 @@ from ..qt import QtGui, QtWidgets, Qt, Signal
 from ..widgets.dialogs import show_error
 from ..widgets.graph import (WIN8_CPU, WIN8_DISK, WIN8_GPU, WIN8_MEM, WIN8_NET, CompositionBar,
                              HistoryGraph, nice_ceiling, win8_style)
+from ..widgets import tux as tuxui
 from .common import LinkButton, bottom_bar
 
 GRAY = "#707070"
@@ -119,17 +120,26 @@ class StatBlock(QtWidgets.QWidget):
             big.addLayout(line)
         big.addStretch(1)
         outer.addLayout(big)
-        grid = QtWidgets.QGridLayout()
-        grid.setVerticalSpacing(1)
-        grid.setHorizontalSpacing(16)
-        for idx, name in enumerate(small):
-            grid.addWidget(_label(name + ":", 9, GRAY), idx, 0)
-            value = _label("", 9)
-            grid.addWidget(value, idx, 1)
-            self.values[name] = value
-        grid.setRowStretch(len(small), 1)
-        outer.addLayout(grid)
+        self.grid = QtWidgets.QGridLayout()
+        self.grid.setVerticalSpacing(1)
+        self.grid.setHorizontalSpacing(16)
+        self.rows = 0
+        self.add_small(small)
+        outer.addLayout(self.grid)
         outer.addStretch(1)
+
+    def add_small(self, names):
+        """Append key/value rows (Tux mode adds its Linux details this way)."""
+        self.grid.setRowStretch(self.rows, 0)
+        for name in names:
+            if name in self.values:
+                continue
+            self.grid.addWidget(_label(name + ":", 9, GRAY), self.rows, 0)
+            value = _label("", 9)
+            self.grid.addWidget(value, self.rows, 1)
+            self.values[name] = value
+            self.rows += 1
+        self.grid.setRowStretch(self.rows, 1)
 
     def set(self, name, text):
         label = self.values[name]
@@ -501,10 +511,11 @@ def _used_of(used, total):
 class PerformanceTab(QtWidgets.QWidget):
     summary_toggled = Signal(bool)
 
-    def __init__(self, win10=False, parent=None):
+    def __init__(self, win10=False, tux=False, parent=None):
         super().__init__(parent)
         self.setObjectName("win8page")
         self.win10 = win10
+        self.tux = tux
         self.summary = False
         self.graphs_hidden = False
         outer = QtWidgets.QVBoxLayout(self)
@@ -545,7 +556,36 @@ class PerformanceTab(QtWidgets.QWidget):
         self._add("mem", "Memory", WIN8_MEM,
                   MemoryPage10(sysinfo.memory_hardware()) if win10 else MemoryPage())
         self.disk_index = {}
+        if tux:
+            self.page_for["cpu"].stats.add_small(tuxui.CPU_KEYS)
+            self.page_for["mem"].stats.add_small(tuxui.MEM_KEYS)
         self.select("cpu")
+
+    def _update_tux(self, snap):
+        ex = snap.tux
+        if ex is None:
+            return
+        for key, values in (("cpu", tuxui.cpu_values(ex)), ("mem", tuxui.mem_values(ex))):
+            for name, value in values.items():
+                self.page_for[key].stats.set(name, value)
+        for key, page in self.page_for.items():
+            if key.startswith("disk:"):
+                values = tuxui.disk_values(ex, key[5:])
+            elif key.startswith("net:"):
+                values = tuxui.net_values(ex, key[4:])
+            else:
+                continue
+            page.stats.add_small(values)
+            for name, value in values.items():
+                page.stats.set(name, value)
+        if ex.temperatures:
+            if "sensors" not in self.items:
+                self._add("sensors", "Sensors", SENSOR_COLORS, SensorsPage())
+            temp = ex.cpu_temperature or 0.0
+            self.items["sensors"].graph.push(temp)
+            hottest = max(ex.temperatures, key=lambda t: t[2])
+            self.items["sensors"].set_text("{:.0f} \u00b0C".format(temp), hottest[1])
+            self.page_for["sensors"].update_tux(ex)
 
     def _add(self, key, title, colors, page, series=1):
         item = SideItem(key, title, colors, series)
@@ -653,10 +693,46 @@ class PerformanceTab(QtWidgets.QWidget):
                 self.items[key].graph.push(gpu.utilization)
                 self.items[key].set_text(gpu.name, "{:.0f}%".format(gpu.utilization))
                 self.page_for[key].update_snapshot(gpu)
+        if self.tux:
+            self._update_tux(snap)
         for key in [k for k in self.items if k.startswith(("disk:", "net:", "gpu:")) and k not in keys]:
             if self.current == key:
                 self.select("cpu")
             self._remove(key)
+
+
+SENSOR_COLORS = ("#C42B1C", "#FCEDEB", "#F4D6D2")
+
+
+class SensorsPage(DetailPage):
+    """Tux mode: temperatures and fans, which Windows' Task Manager never shows."""
+
+    def __init__(self, parent=None):
+        super().__init__("Sensors", parent)
+        self.graph = HistoryGraph(win8_style(*SENSOR_COLORS), POINTS)
+        self.frame = GraphFrame("CPU temperature over 60 seconds", "100 \u00b0C", self.graph)
+        self.layout_.addWidget(self.frame, 1)
+        self.stats = StatBlock([["CPU temperature", "Hottest sensor"], ["Sensors", "Fans"]], [])
+        self.layout_.addWidget(self.stats)
+
+    def update_tux(self, ex):
+        temp = ex.cpu_temperature or 0.0
+        crit = max((t[4] or 0 for t in ex.temperatures), default=0) or 100.0
+        self.graph.maximum = max(100.0, crit)
+        self.frame.right.setText("{:.0f} \u00b0C".format(self.graph.maximum))
+        self.graph.push(temp)
+        hottest = max(ex.temperatures, key=lambda t: t[2])
+        self.subtitle.setText(hottest[1])
+        self.stats.set("CPU temperature", "{:.0f} \u00b0C".format(temp))
+        self.stats.set("Hottest sensor", "{:.0f} \u00b0C".format(hottest[2]))
+        self.stats.set("Sensors", str(len(ex.temperatures)))
+        self.stats.set("Fans", str(len(ex.fans)) if ex.fans else "None")
+        values = {"{} {}".format(chip, label): "{:.0f} \u00b0C".format(cur)
+                  for chip, label, cur, _high, _crit in ex.temperatures[:16]}
+        values.update({"{} {}".format(chip, label): "{} RPM".format(rpm) for chip, label, rpm in ex.fans[:6]})
+        self.stats.add_small(values)
+        for name, value in values.items():
+            self.stats.set(name, value)
 
 
 def _separator():

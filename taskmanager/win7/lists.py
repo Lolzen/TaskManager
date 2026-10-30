@@ -9,6 +9,7 @@ from ..backend.formatting import fmt_cpu_time, fmt_kb
 from ..core import bulk_update
 from ..qt import QtCore, QtWidgets, Qt, Signal
 from ..widgets.dialogs import RunDialog, confirm, guarded, process_menu
+from ..widgets import tux as tuxui
 from ..widgets.tree import (KEY_ROLE, LEFT, RIGHT, ColumnChooser, ItemSync, make_tree,
                             selected_key, set_cell)
 
@@ -137,12 +138,18 @@ PROCESS_COLUMNS = [
 ]
 
 
+TUX_PROCESS_COLUMNS = [Column(title, lambda p, s, f=text: f(p), sort, align, width, default)
+                       for title, text, sort, align, width, default in tuxui.PROC_COLUMNS]
+
+
 class ProcessesTab(QtWidgets.QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, tux=False, parent=None):
         super().__init__(parent)
         self.settings = QtCore.QSettings()
-        saved = self.settings.value("win7/columns", None, type=list)
-        self.visible = saved or [c.title for c in PROCESS_COLUMNS if c.default]
+        self.all_columns = PROCESS_COLUMNS + (TUX_PROCESS_COLUMNS if tux else [])
+        self.columns_key = "win7/columns_tux" if tux else "win7/columns"
+        saved = self.settings.value(self.columns_key, None, type=list)
+        self.visible = saved or [c.title for c in self.all_columns if c.default]
         self.full_account = False
         self.own_uid = os.getuid() if hasattr(os, "getuid") else -1
         self.host = socket.gethostname().split(".")[0].upper()
@@ -173,7 +180,7 @@ class ProcessesTab(QtWidgets.QWidget):
         return proc.username
 
     def _columns(self):
-        return [c for c in PROCESS_COLUMNS if c.title in self.visible]
+        return [c for c in self.all_columns if c.title in self.visible]
 
     def _build_tree(self):
         sort_col, order = 3, Qt.SortOrder.DescendingOrder
@@ -194,13 +201,13 @@ class ProcessesTab(QtWidgets.QWidget):
             self.update_snapshot(self.snap)
 
     def choose_columns(self):
-        titles = [c.title for c in PROCESS_COLUMNS if c.title != "Image Name"]
+        titles = [c.title for c in self.all_columns if c.title != "Image Name"]
         dlg = ColumnChooser("Select Process Page Columns",
                             "Select the columns that will appear on the Process page of the Task Manager.",
                             titles, self.visible, self)
         if dlg.exec():
             self.visible = ["Image Name"] + dlg.chosen()
-            self.settings.setValue("win7/columns", self.visible)
+            self.settings.setValue(self.columns_key, self.visible)
             self._build_tree()
 
     def _all_users_toggled(self, checked):
@@ -260,12 +267,14 @@ class ProcessesTab(QtWidgets.QWidget):
 
 
 class UsersTab(QtWidgets.QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, tux=False, parent=None):
         super().__init__(parent)
+        self.tux = tux
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
-        self.tree = make_tree(["User", "ID", "Status", "Client Name", "Session", "Logon Time"])
-        for col, width in enumerate((110, 40, 70, 110, 80, 140)):
+        self.tree = make_tree(["User", "ID", "Status", "Client Name", "Session", "Logon Time"] +
+                              (tuxui.USER_COLUMNS if tux else []))
+        for col, width in enumerate((110, 40, 70, 110, 80, 140, 50, 200, 110, 140)):
             self.tree.header().resizeSection(col, width)
         self.tree.sortByColumn(1, Qt.SortOrder.AscendingOrder)
         self.sync = ItemSync(self.tree)
@@ -290,6 +299,9 @@ class UsersTab(QtWidgets.QWidget):
             set_cell(item, 3, user.host or "")
             set_cell(item, 4, "Console" if (user.terminal or "").startswith(("tty", "seat", ":")) else (user.terminal or ""))
             set_cell(item, 5, datetime.datetime.fromtimestamp(user.started).strftime("%Y-%m-%d %H:%M"), user.started)
+            if self.tux:
+                for offset, value in enumerate(tuxui.account_info(user.name)):
+                    set_cell(item, 6 + offset, value)
         self.sync.end()
 
     def _current(self):

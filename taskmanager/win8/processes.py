@@ -9,6 +9,7 @@ from ..backend.formatting import MB, fmt_cpu_time, fmt_disk_rate, fmt_kb, fmt_me
 from ..backend.sampler import KIND_APP, KIND_BACKGROUND, KIND_SYSTEM
 from ..core import bulk_update
 from ..qt import QtCore, QtWidgets, Qt, Signal
+from ..widgets import tux as tuxui
 from ..widgets.dialogs import PropertiesDialog, confirm, confirm_end, guarded, process_menu
 from ..widgets.tree import KEY_ROLE, LEFT, RIGHT, ColumnChooser, SortItem, make_tree, set_cell
 from .common import (APP_ICON, PROC_ICON, SYS_ICON, USER_ICON, GroupItem, LinkButton, bottom_bar,
@@ -155,6 +156,7 @@ TYPE_LABELS = {KIND_APP: "App", KIND_BACKGROUND: "Background process", KIND_SYST
 
 
 WIN10_PROC_COLUMNS = ["GPU", "GPU engine", "Power usage", "Power usage trend"]
+TUX_PROC_COLUMNS = ["systemd unit", "Container", "OOM score", "Memory (USS)"]
 
 
 class ProcessesTab(MetricTreeTab):
@@ -162,12 +164,15 @@ class ProcessesTab(MetricTreeTab):
     goto_details = Signal(int)
     used = Signal()
 
-    def __init__(self, win10=False, parent=None):
+    def __init__(self, win10=False, tux=False, parent=None):
         super().__init__(parent)
         self.win10 = win10
+        self.tux = tux
         self.group_by_type = True
         self.trends = {}  # row key -> smoothed power score (Windows 10 *Power usage trend*)
         columns = PROC_COLUMNS + (WIN10_PROC_COLUMNS if win10 else [])
+        self.tux_col = len(columns)
+        columns = columns + (TUX_PROC_COLUMNS if tux else [])
         if win10:
             self.GPU_COLS = (10, 11)
         layout = QtWidgets.QVBoxLayout(self)
@@ -179,6 +184,10 @@ class ProcessesTab(MetricTreeTab):
         for idx, width in enumerate((250, 120, 80, 55, 110, 250, 70, 85, 75, 75, 60, 100, 90, 120)):
             if idx < len(columns):
                 self.header.resizeSection(idx, width)
+        if tux:
+            self.header.right_aligned |= {self.tux_col + 2, self.tux_col + 3}
+            for offset, width in enumerate((170, 80, 75, 95)):
+                self.header.resizeSection(self.tux_col + offset, width)
         for title in PROC_HIDDEN:
             self.header.setSectionHidden(columns.index(title), True)
         column_menu(self.tree, columns)
@@ -242,6 +251,8 @@ class ProcessesTab(MetricTreeTab):
                 self._fill_static(item, procs[0], KIND_APP)
                 hung = any(p.status == "Suspended" for p in procs)
                 set_cell(item, 2, "Suspended" if hung else "")
+                if self.tux:
+                    self.fill_tux(item, procs)
                 self.fill_metrics(item, sum(p.cpu for p in procs), sum(p.mem_private for p in procs),
                                   sum(p.disk_bps for p in procs), total)
                 if self.win10:
@@ -277,6 +288,17 @@ class ProcessesTab(MetricTreeTab):
         set_heat(item, 12, level / 4.0)
         set_heat(item, 13, trend_level / 4.0)
 
+    def fill_tux(self, item, procs):
+        extras = [p.tux for p in procs if p.tux is not None]
+        col = self.tux_col
+        units = sorted({e.unit for e in extras if e.unit})
+        set_cell(item, col, ", ".join(units[:2]) + (" \u2026" if len(units) > 2 else ""))
+        set_cell(item, col + 1, next((e.container for e in extras if e.container), ""))
+        oom = max((e.oom_score for e in extras), default=0)
+        set_cell(item, col + 2, str(oom) if extras else "", oom, RIGHT)
+        uss = sum(e.uss for e in extras)
+        set_cell(item, col + 3, fmt_mem_mb(uss) if uss else "", uss, RIGHT)
+
     def _fill_static(self, item, proc, kind):
         set_cell(item, 1, TYPE_LABELS[kind])
         set_cell(item, 3, str(proc.pid), proc.pid, RIGHT)
@@ -291,6 +313,9 @@ class ProcessesTab(MetricTreeTab):
             item.setIcon(0, icon_for(proc.icon, fallback))
         self._fill_static(item, proc, proc.kind)
         set_cell(item, 2, "Suspended" if proc.status == "Suspended" else "")
+        if self.tux:
+            set_cell(item, 2, tuxui.proc_status(proc, item.text(2)))
+            self.fill_tux(item, [proc])
         self.fill_metrics(item, proc.cpu, proc.mem_private, proc.disk_bps, total)
         if self.win10:
             self.fill_gpu(item, proc.gpu, proc.gpu_engine)
@@ -361,11 +386,14 @@ USER_COLUMNS = ["User", "ID", "Session", "Client name", "Status", "CPU", "Memory
 class UsersTab(MetricTreeTab):
     METRIC_COLS = (5, 6, 7, 8)
 
-    def __init__(self, win10=False, parent=None):
+    def __init__(self, win10=False, tux=False, parent=None):
         super().__init__(parent)
         self.win10 = win10
+        self.tux = tux
         self.full_names = False
         columns = USER_COLUMNS + (["GPU", "GPU engine"] if win10 else [])
+        self.tux_col = len(columns)
+        columns = columns + (tuxui.USER_COLUMNS if tux else [])
         if win10:
             self.GPU_COLS = (9, 10)
         self.own_user = None
@@ -421,6 +449,9 @@ class UsersTab(MetricTreeTab):
                 set_cell(item, 2, (session.terminal if session else "") or "Console")
                 set_cell(item, 3, (session.host if session else "") or socket.gethostname())
                 set_cell(item, 4, "")
+                if self.tux:
+                    for offset, value in enumerate(tuxui.account_info(name)):
+                        set_cell(item, self.tux_col + offset, value)
                 self.fill_metrics(item, sum(p.cpu for p in procs), sum(p.mem_private for p in procs),
                                   sum(p.disk_bps for p in procs), total)
                 if procs:
@@ -432,7 +463,8 @@ class UsersTab(MetricTreeTab):
                     set_cell(child, 0, label, label.lower())
                     if child.icon(0).isNull():
                         child.setIcon(0, icon_for(proc.icon, APP_ICON if proc.app_id else PROC_ICON))
-                    set_cell(child, 4, "Suspended" if proc.status == "Suspended" else "")
+                    status = "Suspended" if proc.status == "Suspended" else ""
+                    set_cell(child, 4, tuxui.proc_status(proc, status) if self.tux else status)
                     self.fill_metrics(child, proc.cpu, proc.mem_private, proc.disk_bps, total)
                     self.fill_gpu(child, proc.gpu, proc.gpu_engine)
             self.end()
@@ -517,13 +549,23 @@ WIN10_DETAIL_COLUMNS = [
 ]
 
 
+TUX_DETAIL_COLUMNS = [DetailColumn(title, text, sort, align, width, default)
+                      for title, text, sort, align, width, default in tuxui.PROC_COLUMNS
+                      if title not in ("Parent PID", "State")]
+
+
 class DetailsTab(TreeTab):
     goto_service = Signal(int)
 
-    def __init__(self, win10=False, parent=None):
+    def __init__(self, win10=False, tux=False, parent=None):
         super().__init__(parent)
-        self.columns = DETAIL_COLUMNS + (WIN10_DETAIL_COLUMNS if win10 else [])
-        self.settings_key = "win10/detail_columns" if win10 else "win8/detail_columns"
+        self.columns = DETAIL_COLUMNS + (WIN10_DETAIL_COLUMNS if win10 else []) + \
+            (TUX_DETAIL_COLUMNS if tux else [])
+        if tux:
+            # the Status column shows the real kernel state (Sleeping, Disk sleep, Zombie, ...)
+            self.columns = [DetailColumn("Status", lambda p: tuxui.proc_status(p, p.status), width=85, default=True)
+                            if c.title == "Status" else c for c in self.columns]
+        self.settings_key = "{}/detail_columns{}".format("win10" if win10 else "win8", "_tux" if tux else "")
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)

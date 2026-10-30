@@ -13,6 +13,9 @@ layouts:
 * **Windows 10**: the Windows 8 layout plus everything Windows 10 added,
   including GPU monitoring and the Power usage columns (listed below).
 
+**Tux mode** can be switched on for any of the three layouts. It keeps the
+layout and adds the extra information Linux provides (described below).
+
 You can switch layouts at any time from the *View* menu. The app remembers
 the last layout you used.
 
@@ -36,6 +39,13 @@ python3 -m taskmanager --win10    # Windows 10 layout
 ```
 
 You can also switch from *View > Layout* in any layout.
+
+```bash
+python3 -m taskmanager --win10 --tux   # any layout, plus Tux mode
+```
+
+Tux mode can also be toggled with *View > Tux mode*. Both the layout and Tux
+mode are remembered for the next start.
 
 Or install it, which adds a `taskmanager` command, and optionally add the
 launcher entry:
@@ -135,6 +145,59 @@ Everything in the Windows 8 layout, plus:
   on the Users tab), and *Show history for all processes* on the App history
   tab.
 
+### Tux mode
+
+![Windows 7 layout in Tux mode](docs/win7-performance-tux.png)
+
+Tux mode adds the information Linux exposes but Windows' Task Manager has no
+place for. It works with all three layouts:
+
+* **Process lists** (Windows 7 *Processes*, Windows 8/10 *Details*): extra
+  columns, some shown by default and the rest available from the column
+  chooser:
+  * Shown by default: State (Sleeping, Disk sleep, Zombie, ...), systemd
+    unit, OOM score, Memory (USS) and Open files.
+  * In the column chooser: Scheduling policy, I/O priority, Nice, cgroup,
+    Container (Flatpak, Snap, Docker, Podman, LXC, ...), OOM adjust, Memory
+    (PSS), Swap, Virtual memory, Context switches, Page faults, Last CPU,
+    Session ID, Process group, TTY, Capabilities, Seccomp, No new privileges,
+    Security label (AppArmor/SELinux) and Working directory.
+
+  In Windows 8/10 the Details tab's Status column shows the real kernel state.
+* **Windows 8/10 Processes tab:** systemd unit, Container, OOM score and
+  Memory (USS) columns.
+* **Performance:**
+  * CPU: load average, CPU pressure (PSI), context switches/s,
+    interrupts/s, frequency governor and CPU temperature.
+  * Memory: memory pressure, dirty/writeback pages, huge pages,
+    swappiness and overcommit.
+  * Disks: I/O scheduler and I/O pressure.
+  * Network: MAC address, MTU, duplex, errors and drops.
+  * Windows 8/10 also get a **Sensors** page in the sidebar (temperatures
+    and fans) when the system reports sensors. Windows 7 gets a *Linux* box
+    on its Performance tab.
+* **Services:** systemd's startup state, sub-state, type, memory, tasks, CPU
+  time and restart count for each unit.
+* **Startup** (Windows 8/10): systemd user services, which can be enabled
+  and disabled like the other entries (`systemctl --user enable/disable`).
+* **Users:** UID, groups, shell and home directory.
+* **A new *Tux* tab** with everything else:
+  * System: kernel, distribution, init system, desktop, display server and
+    cgroup version.
+  * Load: context switches, interrupts and new processes per second, plus
+    pressure stall information.
+  * CPU: per-core frequencies and CPU vulnerability mitigations.
+  * Memory: detailed `/proc/meminfo` values.
+  * Sensors, battery and fans.
+  * Filesystems, disk I/O schedulers, network adapter details, and kernel
+    limits (file handles, PID max, inotify watches).
+
+Collecting these extras costs about 0.3 ms per process on each refresh. That
+work runs in the background sampling thread, which is why Tux mode is a
+switch rather than always on. The extras come from `/proc` and `/sys`, so
+on macOS and BSD Tux mode only shows what psutil reports there (load,
+sensors, filesystems).
+
 ## How Windows concepts map to UNIX
 
 | Windows | This implementation |
@@ -172,6 +235,8 @@ The code is split into a few parts:
 * `taskmanager/backend/`: everything that talks to the OS. It has no Qt
   dependency, so it can be unit-tested on its own.
 * `taskmanager/core.py`: the background sampling thread.
+* `taskmanager/backend/linux.py` and `taskmanager/widgets/tux.py`: Tux
+  mode's data collection and its columns/Tux tab.
 * `taskmanager/widgets/`: the painted graphs and meters, plus the dialogs and
   Services panel that both layouts share.
 * `taskmanager/win7/`, `taskmanager/win8/` and `taskmanager/win10/`: one

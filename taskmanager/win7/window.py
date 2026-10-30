@@ -3,6 +3,7 @@
 from ..qt import QtCore, QtGui, QtWidgets
 from ..widgets.dialogs import AboutDialog, RunDialog
 from ..widgets.services import ServicesPanel
+from ..widgets.tux import TuxPanel, tux_title
 from .lists import ApplicationsTab, ProcessesTab, UsersTab
 from .performance import NetworkingTab, PerformanceTab
 
@@ -44,22 +45,26 @@ class Win7Window(QtWidgets.QMainWindow):
         super().__init__()
         self.controller = controller
         self.setObjectName("win7")
-        self.setWindowTitle("Windows Task Manager")
+        self.tux = controller.tux
+        self.setWindowTitle(tux_title("Windows Task Manager") if self.tux else "Windows Task Manager")
         self.setStyleSheet(STYLE)
         self.settings = QtCore.QSettings()
 
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.setDocumentMode(False)
         self.apps = ApplicationsTab()
-        self.procs = ProcessesTab()
-        self.services = ServicesPanel(win8=False)
-        self.perf = PerformanceTab()
-        self.net = NetworkingTab()
-        self.users = UsersTab()
+        self.procs = ProcessesTab(tux=self.tux)
+        self.services = ServicesPanel(win8=False, tux=self.tux)
+        self.perf = PerformanceTab(tux=self.tux)
+        self.net = NetworkingTab(tux=self.tux)
+        self.users = UsersTab(tux=self.tux)
+        self.tux_panel = TuxPanel() if self.tux else None
         for widget, title in ((self.apps, "Applications"), (self.procs, "Processes"),
                               (self.services, "Services"), (self.perf, "Performance"),
                               (self.net, "Networking"), (self.users, "Users")):
             self.tabs.addTab(widget, title)
+        if self.tux_panel is not None:
+            self.tabs.addTab(self.tux_panel, "Tux")
         central = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(central)
         lay.setContentsMargins(6, 6, 6, 4)
@@ -153,7 +158,7 @@ class Win7Window(QtWidgets.QMainWindow):
         self.act_netcols.setEnabled(widget is self.net)
         self.settings.setValue("win7/tab", index)
         snap = self.controller.sampler.last
-        if snap is not None and widget in (self.apps, self.procs, self.users):
+        if snap is not None and widget in (self.apps, self.procs, self.users, self.tux_panel):
             widget.update_snapshot(snap)
 
     def _full_account(self, checked):
@@ -187,6 +192,8 @@ class Win7Window(QtWidgets.QMainWindow):
             self.procs.update_snapshot(snap)
         elif current is self.users:
             self.users.update_snapshot(snap)
+        elif current is not None and current is self.tux_panel:
+            self.tux_panel.update_snapshot(snap)
 
     def goto_process(self, pid):
         self.tabs.setCurrentWidget(self.procs)

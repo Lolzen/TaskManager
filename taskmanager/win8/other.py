@@ -83,10 +83,11 @@ class AppHistoryTab(QtWidgets.QWidget):
 
 
 class StartupTab(QtWidgets.QWidget):
-    def __init__(self, win10=False, parent=None):
+    def __init__(self, win10=False, tux=False, parent=None):
         super().__init__(parent)
         self.setObjectName("win8page")
         self.win10 = win10
+        self.tux = tux
         self.entries = {}
         self.running = set()
         layout = QtWidgets.QVBoxLayout(self)
@@ -151,11 +152,11 @@ class StartupTab(QtWidgets.QWidget):
             return
         for key, item in self.sync.items.items():
             entry = self.entries.get(key)
-            program = exec_program(entry.command) if entry else ""
+            program = exec_program(entry.command) if entry and entry.kind != "systemd" else ""
             set_cell(item, 6, "Running" if program and program in self.running else "")
 
     def refresh(self):
-        run_async(startup.list_startup, self._loaded)
+        run_async(lambda: startup.list_startup(self.tux), self._loaded)
 
     def _loaded(self, items, error):
         if error is not None:

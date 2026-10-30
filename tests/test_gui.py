@@ -79,3 +79,36 @@ def test_switch_layout(qapp):
         controller.window._switching = True
         controller.window.close()
         controller._shutdown()
+
+
+@pytest.mark.parametrize("layout", ["win7", "win8", "win10"])
+def test_tux_mode_adds_tab_and_columns(qapp, layout):
+    from taskmanager.app import Controller
+    controller = Controller(qapp, layout, tux=True)
+    controller.set_speed("High")
+    try:
+        _wait_for_snapshot(qapp, controller, count=3)
+        window = controller.window
+        assert "Tux mode" in window.windowTitle()
+        titles = [window.tabs.tabText(i) for i in range(window.tabs.count())]
+        assert titles[-1] == "Tux"
+        window.tabs.setCurrentIndex(len(titles) - 1)
+        window.on_snapshot(controller.sampler.last)
+        sections = [window.tux_panel.tree.topLevelItem(i).text(0)
+                    for i in range(window.tux_panel.tree.topLevelItemCount())]
+        assert "Load" in sections and "Kernel limits" in sections
+        procs = window.procs if layout == "win7" else window.details
+        header = procs.tree.headerItem()
+        labels = [header.text(i) for i in range(header.columnCount())]
+        assert "systemd unit" in labels and "OOM score" in labels
+        for index in range(window.tabs.count()):
+            window.tabs.setCurrentIndex(index)
+            qapp.processEvents()
+        # switching Tux mode off rebuilds the same layout without it
+        controller.set_tux(False)
+        assert controller.window.LAYOUT == layout
+        assert "Tux mode" not in controller.window.windowTitle()
+    finally:
+        controller.window._switching = True
+        controller.window.close()
+        controller._shutdown()

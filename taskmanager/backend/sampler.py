@@ -14,6 +14,7 @@ import psutil
 from . import sysinfo
 from .apps import AppRegistry
 from .gpu import GpuSampler
+from .linux import SystemSampler, io_priority, read_proc_extras
 
 KIND_APP = "app"
 KIND_BACKGROUND = "background"
@@ -72,6 +73,7 @@ class ProcInfo:
     gpu_engine: str = ""  # e.g. "GPU 0 - 3D"
     gpu_dedicated: int = 0
     gpu_shared: int = 0
+    tux: object = None  # linux.ProcExtras in Tux mode
 
     @property
     def display_name(self):
@@ -169,6 +171,7 @@ class Snapshot:
     disk_total_bps: float = 0.0
     net_total_bps: float = 0.0
     gpus: list = field(default_factory=list)
+    tux: object = None  # linux.SystemExtras in Tux mode
 
     @property
     def uptime(self):
@@ -210,6 +213,8 @@ class Sampler:
         self.boot_time = psutil.boot_time()
         self.ncpu = psutil.cpu_count() or 1
         self._ssid_cache = {}  # iface -> (timestamp, ssid)
+        self.tux = False  # Tux mode: also collect the Linux-only extras
+        self._tux_system = SystemSampler()
         try:
             self.gpu = GpuSampler()
         except OSError:
@@ -255,6 +260,12 @@ class Sampler:
                 snap.gpus = self.gpu.sample(snap.procs, dt)
             except OSError:
                 snap.gpus = []
+        if self.tux:
+            snap.tux = self._tux_system.sample(dt)
+            if sysinfo.IS_LINUX:
+                for proc in snap.procs.values():
+                    proc.tux = read_proc_extras(proc.pid)
+                    proc.tux.io_priority = io_priority(proc.pid)
         snap.handles = sysinfo.open_handles()
         try:
             snap.users = psutil.users()

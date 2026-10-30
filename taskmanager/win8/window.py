@@ -5,6 +5,7 @@ from ..core import run_async
 from ..qt import QtCore, QtGui, QtWidgets
 from ..widgets.dialogs import AboutDialog, RunDialog
 from ..widgets.services import ServicesPanel
+from ..widgets.tux import TuxPanel, tux_title
 from .common import STYLE
 from .other import AppHistoryTab, CompactView, StartupTab
 from .performance import PerformanceTab
@@ -21,7 +22,8 @@ class Win8Window(QtWidgets.QMainWindow):
         super().__init__()
         self.controller = controller
         self.setObjectName("win8")
-        self.setWindowTitle("Task Manager")
+        self.tux = controller.tux
+        self.setWindowTitle(tux_title("Task Manager") if self.tux else "Task Manager")
         self.setStyleSheet(self.STYLE)
         self.settings = QtCore.QSettings()
         key = self.LAYOUT
@@ -33,13 +35,14 @@ class Win8Window(QtWidgets.QMainWindow):
         self.stack.addWidget(self.compact_view)
 
         self.tabs = QtWidgets.QTabWidget()
-        self.procs = ProcessesTab(win10=self.WIN10)
-        self.perf = PerformanceTab(win10=self.WIN10)
+        self.procs = ProcessesTab(win10=self.WIN10, tux=self.tux)
+        self.perf = PerformanceTab(win10=self.WIN10, tux=self.tux)
         self.history = AppHistoryTab(controller.history)
-        self.startup = StartupTab(win10=self.WIN10)
-        self.users = UsersTab(win10=self.WIN10)
-        self.details = DetailsTab(win10=self.WIN10)
-        self.services = ServicesPanel(win8=True)
+        self.startup = StartupTab(win10=self.WIN10, tux=self.tux)
+        self.users = UsersTab(win10=self.WIN10, tux=self.tux)
+        self.details = DetailsTab(win10=self.WIN10, tux=self.tux)
+        self.services = ServicesPanel(win8=True, tux=self.tux)
+        self.tux_panel = TuxPanel(win8=True) if self.tux else None
         self.services.setObjectName("win8page")
         for widget, title in ((self.procs, "Processes"), (self.perf, "Performance"),
                               (self.history, "App history"), (self.startup, "Startup"),
@@ -48,6 +51,8 @@ class Win8Window(QtWidgets.QMainWindow):
             fewer = getattr(widget, "fewer", None)
             if fewer is not None:
                 fewer.clicked.connect(lambda: self.set_compact(True))
+        if self.tux_panel is not None:
+            self.tabs.addTab(self.tux_panel, "Tux")
         self.stack.addWidget(self.tabs)
         self.setCentralWidget(self.stack)
 
@@ -128,7 +133,8 @@ class Win8Window(QtWidgets.QMainWindow):
             act.setEnabled(widget is self.procs)
         self.settings.setValue(self.LAYOUT + "/tab", index)
         snap = self.controller.sampler.last
-        live = (self.procs, self.users, self.details) + ((self.startup,) if self.WIN10 else ())
+        live = (self.procs, self.users, self.details) + ((self.startup,) if self.WIN10 else ()) + \
+            ((self.tux_panel,) if self.tux_panel is not None else ())
         if snap is not None and widget in live:
             widget.update_snapshot(snap)
 
@@ -170,6 +176,8 @@ class Win8Window(QtWidgets.QMainWindow):
         if current in (self.procs, self.users, self.details):
             current.update_snapshot(snap)
         elif current is self.startup and self.WIN10:
+            current.update_snapshot(snap)
+        elif current is not None and current is self.tux_panel:
             current.update_snapshot(snap)
 
     def _load_service_pids(self):

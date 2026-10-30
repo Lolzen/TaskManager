@@ -61,11 +61,14 @@ def tray_pixmap(cpu):
 
 
 class Controller(QtCore.QObject):
-    def __init__(self, app, layout):
+    def __init__(self, app, layout, tux=None):
         super().__init__()
         self.app = app
         self.settings = QtCore.QSettings()
         self.sampler = SamplerThread(self)
+        self.tux = self.settings.value("tux", False, type=bool) if tux is None else tux
+        self.settings.setValue("tux", self.tux)
+        self.sampler.set_tux(self.tux)
         self.history = AppHistory()
         self.window = None
         self.always_on_top = self.settings.value("options/on_top", True, type=bool)
@@ -120,7 +123,22 @@ class Controller(QtCore.QObject):
             act.setCheckable(True)
             act.setChecked(layout == current)
             group.addAction(act)
+        tux = menu.addAction("&Tux mode", lambda checked: self._tux_later(checked))
+        tux.setCheckable(True)
+        tux.setChecked(self.tux)
+        tux.setToolTip("Show everything Linux reports on top of the current layout")
         return sub
+
+    def _tux_later(self, enabled):
+        QtCore.QTimer.singleShot(0, lambda: self.set_tux(enabled))
+
+    def set_tux(self, enabled):
+        """Tux mode adds Linux-only information to whichever layout is active."""
+        self.tux = enabled
+        self.settings.setValue("tux", enabled)
+        self.sampler.set_tux(enabled)
+        if self.window is not None:
+            self.switch_layout(self.window.LAYOUT)
 
     def _switch_later(self, layout):
         # the old window owns the menu that triggered this; replace it after the event
@@ -212,6 +230,10 @@ def parse_args(argv):
                        help="shortcut for --layout win8")
     group.add_argument("--win10", dest="layout", action="store_const", const="win10",
                        help="shortcut for --layout win10")
+    tux = parser.add_mutually_exclusive_group()
+    tux.add_argument("--tux", dest="tux", action="store_true", default=None,
+                     help="Tux mode: also show the extra information Linux provides")
+    tux.add_argument("--no-tux", dest="tux", action="store_false", help="turn Tux mode off")
     parser.add_argument("--version", action="version", version="%(prog)s " + __version__)
     return parser.parse_known_args(argv)
 
@@ -227,7 +249,7 @@ def main(argv=None):
     layout = args.layout or QtCore.QSettings().value("layout", "win8")
     if layout not in LAYOUTS:
         layout = "win8"
-    controller = Controller(app, layout)
+    controller = Controller(app, layout, args.tux)
     signal.signal(signal.SIGINT, lambda *_: app.quit())
     # wake the interpreter regularly so Ctrl+C is handled
     keepalive = QtCore.QTimer()
