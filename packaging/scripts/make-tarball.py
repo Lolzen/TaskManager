@@ -9,7 +9,7 @@ import sys
 import tarfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-SKIP_DIRS = {".git", "__pycache__", "dist", "build", ".pytest_cache", ".pybuild", "debian"}
+SKIP_DIRS = {".git", "__pycache__", "dist", "build", ".pytest_cache", ".pybuild"}
 
 
 def version():
@@ -25,7 +25,8 @@ def main():
     prefix = "TaskManager-{}".format(ver)
     with tarfile.open(target, "w:gz") as tar:
         for dirpath, dirnames, filenames in os.walk(ROOT):
-            dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.endswith(".egg-info"))
+            dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.endswith(".egg-info")
+                                 and not (dirpath == ROOT and d == "debian"))  # dpkg-buildpackage copy
             for name in sorted(filenames):
                 path = os.path.join(dirpath, name)
                 if os.path.abspath(path) == os.path.abspath(target):

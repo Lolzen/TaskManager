@@ -157,3 +157,38 @@ def test_dialogs_and_menus_build(qapp):
         controller.window._switching = True
         controller.window.close()
         controller._shutdown()
+
+
+def test_late_background_result_after_layout_switch(qapp, monkeypatch):
+    """A services list that arrives after its window was replaced must be dropped.
+
+    With PyQt6 an exception in that callback would abort the application.
+    """
+    import time
+
+    from taskmanager.app import Controller
+    from taskmanager.backend import services
+
+    def slow_list():
+        time.sleep(0.6)
+        return []
+
+    monkeypatch.setattr(services, "list_services", slow_list)
+    controller = Controller(qapp, "win8")
+    try:
+        window = controller.window
+        window.tabs.setCurrentWidget(window.services)  # starts a slow refresh
+        qapp.processEvents()
+        controller.switch_layout("win7")  # the Windows 8 window is deleted meanwhile
+        timer = QtCore.QElapsedTimer()
+        timer.start()
+        while timer.elapsed() < 1500:
+            qapp.processEvents(QtCore.QEventLoop.ProcessEventsFlag.AllEvents, 50)
+            QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete.value
+                                                     if hasattr(QtCore.QEvent.Type.DeferredDelete, "value")
+                                                     else QtCore.QEvent.Type.DeferredDelete)
+        assert controller.window.LAYOUT == "win7"
+    finally:
+        controller.window._switching = True
+        controller.window.close()
+        controller._shutdown()

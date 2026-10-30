@@ -101,7 +101,7 @@ class StartupTab(QtWidgets.QWidget):
             self.bios.setStyleSheet("color: #707070;")
             top.addWidget(self.bios)
             layout.addLayout(top)
-            run_async(sysinfo.last_bios_time, self._bios_loaded)
+            run_async(sysinfo.last_bios_time, self._bios_loaded, self)
         cols = ["Name", "Publisher", "Status", "Startup impact", "Command"]
         if win10:
             cols += ["Startup type", "Running now"]
@@ -156,7 +156,7 @@ class StartupTab(QtWidgets.QWidget):
             set_cell(item, 6, "Running" if program and program in self.running else "")
 
     def refresh(self):
-        run_async(lambda: startup.list_startup(self.tux), self._loaded)
+        run_async(lambda: startup.list_startup(self.tux), self._loaded, self)
 
     def _loaded(self, items, error):
         if error is not None:

@@ -73,7 +73,7 @@ class ServicesPanel(QtWidgets.QWidget):
         if self._loading:
             return
         self._loading = True
-        run_async(svc_backend.list_services, self._loaded)
+        run_async(svc_backend.list_services, self._loaded, self)
 
     def _loaded(self, result, error):
         self._loading = False
@@ -137,7 +137,7 @@ class ServicesPanel(QtWidgets.QWidget):
                 show_error(self, "Services", error)
             self.refresh()
 
-        run_async(lambda: svc_backend.control(svc, action), done)
+        run_async(lambda: svc_backend.control(svc, action), done, self)
 
     def _search(self, svc):
         from ..backend.actions import open_path

@@ -3,6 +3,8 @@
 PySide6 is preferred and PyQt6 is the fallback, so the application runs with
 whichever modern Qt binding the distribution ships (Ubuntu 24.04, for example,
 only packages PyQt6). Set ``TASKMANAGER_QT=pyqt6`` or ``pyside6`` to force one.
+
+``is_alive(obj)`` tells whether the C++ side of a Qt object still exists.
 """
 
 import os
@@ -14,6 +16,9 @@ def _pyside6():
     global QtCore, QtGui, QtWidgets, Qt, Signal, Slot, BINDING
     from PySide6 import QtCore, QtGui, QtWidgets
     from PySide6.QtCore import Qt, Signal, Slot
+    import shiboken6
+    global is_alive
+    is_alive = shiboken6.isValid
     BINDING = "PySide6"
 
 
@@ -23,6 +28,11 @@ def _pyqt6():
     from PyQt6.QtCore import Qt
     from PyQt6.QtCore import pyqtSignal as Signal
     from PyQt6.QtCore import pyqtSlot as Slot
+    from PyQt6 import sip
+    global is_alive
+
+    def is_alive(obj):
+        return not sip.isdeleted(obj)
     BINDING = "PyQt6"
 
 

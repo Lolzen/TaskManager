@@ -5,7 +5,7 @@ import sys
 import traceback
 
 from .backend.sampler import Sampler
-from .qt import QtCore, Signal, Slot
+from .qt import QtCore, Signal, Slot, is_alive
 
 # Windows' *Update speed* menu
 SPEEDS = {"High": 500, "Normal": 1000, "Low": 4000, "Paused": 0}
@@ -128,13 +128,21 @@ class _Task(QtCore.QRunnable):
 _relays = set()
 
 
-def run_async(fn, callback):
-    """Run ``fn()`` on the thread pool and call ``callback(result, error)``."""
+def run_async(fn, callback, owner=None):
+    """Run ``fn()`` on the thread pool and call ``callback(result, error)``.
+
+    When ``owner`` (the widget the callback updates) has been deleted by the
+    time ``fn`` returns, e.g. because the user switched layouts, the callback
+    is dropped. PyQt6 aborts the whole application on an exception in a slot,
+    so touching the deleted widget is not an option.
+    """
     relay = _Relay()
     _relays.add(relay)
 
     def finish(result, error):
         _relays.discard(relay)
+        if owner is not None and not is_alive(owner):
+            return
         callback(result, error)
 
     relay.done.connect(finish, QtCore.Qt.ConnectionType.QueuedConnection)

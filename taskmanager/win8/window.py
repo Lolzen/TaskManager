@@ -185,7 +185,7 @@ class Win8Window(QtWidgets.QMainWindow):
             if error is None:
                 self.details.service_pids = svc_backend.services_by_pid(result)
 
-        run_async(svc_backend.list_services, done)
+        run_async(svc_backend.list_services, done, self)
 
     def goto_details(self, pid):
         self.tabs.setCurrentWidget(self.details)

@@ -238,8 +238,15 @@ def parse_args(argv):
     return parser.parse_known_args(argv)
 
 
+def _log_exception(exc_type, exc, tb):
+    """PyQt6 aborts on an exception escaping a slot unless a hook is set."""
+    import traceback
+    traceback.print_exception(exc_type, exc, tb)
+
+
 def main(argv=None):
     args, qt_args = parse_args(sys.argv[1:] if argv is None else argv)
+    sys.excepthook = _log_exception
     QtCore.QCoreApplication.setOrganizationName("TaskManager")
     QtCore.QCoreApplication.setApplicationName("TaskManager")
     app = QtWidgets.QApplication([sys.argv[0]] + qt_args)

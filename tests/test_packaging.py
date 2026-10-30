@@ -3,9 +3,15 @@
 import os
 import re
 
+import pytest
+
 import taskmanager
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# distribution builds run the tests without the packaging/ directory next to them
+pytestmark = pytest.mark.skipif(not os.path.isdir(os.path.join(ROOT, "packaging")),
+                                reason="needs a source checkout")
 
 
 def read(*parts):
