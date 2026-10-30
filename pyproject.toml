@@ -8,6 +8,7 @@ dynamic = ["version"]
 description = "Windows 7 and Windows 8 style Task Manager for Linux, macOS and BSD"
 readme = "README.md"
 requires-python = ">=3.8"
+license = { text = "WTFPL" }
 dependencies = [
     "psutil>=5.9",
     "PySide6-Essentials>=6.4",

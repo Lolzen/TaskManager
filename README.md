@@ -129,3 +129,7 @@ The code is split into a few parts:
 * `taskmanager/widgets/`: the painted graphs and meters, plus the dialogs and
   Services panel that both layouts share.
 * `taskmanager/win7/` and `taskmanager/win8/`: one package per layout.
+
+## License
+
+[WTFPL](LICENSE): do what the fuck you want to.
