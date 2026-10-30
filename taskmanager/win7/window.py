@@ -138,7 +138,7 @@ class Win7Window(QtWidgets.QMainWindow):
         self.act_netcols = view.addAction("Show &Bytes Sent/Received History", self._set_net_lines)
         self.act_netcols.setCheckable(True)
         view.addSeparator()
-        view.addAction("Switch to Windows &8 Layout", lambda: c.switch_layout("win8"))
+        c.add_layout_menu(view, "win7")
 
         help_menu = mb.addMenu("&Help")
         help_menu.addAction("Task Manager &Help Topics", c.open_help)

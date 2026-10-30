@@ -50,6 +50,7 @@ WIN8_CPU = ("#117DBB", "#F1F6FA", "#D9EAF4")
 WIN8_MEM = ("#8B12AE", "#F4F2F4", "#ECDEF0")
 WIN8_DISK = ("#4DA60C", "#EFF7E9", "#DCEDD0")
 WIN8_NET = ("#A74F01", "#FCF3EB", "#F2DECA")
+WIN8_GPU = ("#117DBB", "#F1F6FA", "#D9EAF4")  # Windows 10 GPU pages share the CPU blue
 
 
 class HistoryGraph(QtWidgets.QWidget):

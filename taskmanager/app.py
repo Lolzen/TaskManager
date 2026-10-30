@@ -10,7 +10,8 @@ from .core import SamplerThread
 from .qt import QtCore, QtGui, QtWidgets, Qt
 
 HELP_URL = "https://github.com/Lolzen/TaskManager#readme"
-LAYOUTS = ("win7", "win8")
+LAYOUTS = ("win7", "win8", "win10")
+LAYOUT_NAMES = {"win7": "Windows &7", "win8": "Windows &8", "win10": "Windows 1&0"}
 
 
 def apply_light_palette(app):
@@ -93,7 +94,9 @@ class Controller(QtCore.QObject):
     # -- layouts -------------------------------------------------------------
     def switch_layout(self, layout):
         old = self.window
-        if layout == "win8":
+        if layout == "win10":
+            from .win10.window import Win10Window as cls
+        elif layout == "win8":
             from .win8.window import Win8Window as cls
         else:
             from .win7.window import Win7Window as cls
@@ -107,6 +110,22 @@ class Controller(QtCore.QObject):
             old.deleteLater()
         self.settings.setValue("layout", layout)
         self.window.show()
+
+    def add_layout_menu(self, menu, current):
+        """View > Layout submenu, shared by all layouts."""
+        sub = menu.addMenu("&Layout")
+        group = QtGui.QActionGroup(sub)
+        for layout in LAYOUTS:
+            act = sub.addAction(LAYOUT_NAMES[layout], lambda l=layout: self._switch_later(l))
+            act.setCheckable(True)
+            act.setChecked(layout == current)
+            group.addAction(act)
+        return sub
+
+    def _switch_later(self, layout):
+        # the old window owns the menu that triggered this; replace it after the event
+        if self.window is None or self.window.LAYOUT != layout:
+            QtCore.QTimer.singleShot(0, lambda: self.switch_layout(layout))
 
     def window_closed(self, window):
         if getattr(window, "_switching", False):
@@ -191,6 +210,8 @@ def parse_args(argv):
                        help="shortcut for --layout win7")
     group.add_argument("--win8", dest="layout", action="store_const", const="win8",
                        help="shortcut for --layout win8")
+    group.add_argument("--win10", dest="layout", action="store_const", const="win10",
+                       help="shortcut for --layout win10")
     parser.add_argument("--version", action="version", version="%(prog)s " + __version__)
     return parser.parse_known_args(argv)
 

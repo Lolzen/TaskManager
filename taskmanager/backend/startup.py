@@ -33,6 +33,7 @@ class StartupItem:
     path: str = ""
     impact: str = "Not measured"
     editable: bool = True
+    source: str = ""  # Windows 10 *Startup type*
 
     @property
     def status(self):
@@ -61,7 +62,9 @@ def _is_enabled(sec):
 
 def list_xdg(dirs=None):
     items = {}
-    for directory in reversed(dirs if dirs is not None else autostart_dirs()):
+    dirs = dirs if dirs is not None else autostart_dirs()
+    for directory in reversed(dirs):
+        source = "Autostart (user)" if directory == dirs[0] else "Autostart (system)"
         # later (user) directories override earlier (system) ones
         for path in sorted(glob.glob(os.path.join(directory, "*.desktop"))):
             parser = _read_desktop(path)
@@ -78,6 +81,7 @@ def list_xdg(dirs=None):
                 enabled=_is_enabled(sec),
                 command=sec.get("Exec", base.command if base else ""),
                 path=path,
+                source=source if base is None else base.source,
             )
     return sorted(items.values(), key=lambda i: i.name.lower())
 
@@ -127,6 +131,7 @@ def list_launch_agents():
                 command=program,
                 path=path,
                 editable=False,
+                source="LaunchAgent",
             ))
     return sorted(items, key=lambda i: i.name.lower())
 

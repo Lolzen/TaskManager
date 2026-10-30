@@ -3,7 +3,8 @@
 import datetime
 import os
 
-from ..backend import actions, startup
+from ..backend import actions, startup, sysinfo
+from ..backend.apps import exec_program
 from ..backend.formatting import fmt_bytes, fmt_cpu_time
 from ..core import bulk_update, run_async
 from ..qt import QtCore, QtWidgets, Qt, Signal
@@ -18,6 +19,7 @@ class AppHistoryTab(QtWidgets.QWidget):
         super().__init__(parent)
         self.setObjectName("win8page")
         self.history = history
+        self.all_processes = False  # Windows 10: Options > Show history for all processes
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -60,13 +62,14 @@ class AppHistoryTab(QtWidgets.QWidget):
     def refresh(self):
         since = datetime.datetime.fromtimestamp(self.history.since).strftime("%x")
         self.since.setText("Resource usage since {} for current user account.".format(since))
-        total_cpu = sum(a["cpu"] for a in self.history.apps.values())
-        total_io = sum(a["read"] + a["write"] for a in self.history.apps.values())
+        entries = self.history.entries(self.all_processes)
+        total_cpu = sum(a["cpu"] for a in entries.values())
+        total_io = sum(a["read"] + a["write"] for a in entries.values())
         self.header.set_metric(1, fmt_cpu_time(total_cpu), None)
         self.header.set_metric(4, fmt_bytes(total_io), None)
         with bulk_update(self.tree):
             self.sync.begin()
-            for app_id, entry in self.history.apps.items():
+            for app_id, entry in entries.items():
                 item = self.sync.get(app_id)
                 set_cell(item, 0, entry["name"], entry["name"].lower())
                 if item.icon(0).isNull():
@@ -80,20 +83,37 @@ class AppHistoryTab(QtWidgets.QWidget):
 
 
 class StartupTab(QtWidgets.QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, win10=False, parent=None):
         super().__init__(parent)
         self.setObjectName("win8page")
+        self.win10 = win10
         self.entries = {}
+        self.running = set()
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+        if win10:
+            top = QtWidgets.QHBoxLayout()
+            top.setContentsMargins(10, 4, 12, 4)
+            top.addStretch(1)
+            self.bios = QtWidgets.QLabel()
+            self.bios.setStyleSheet("color: #707070;")
+            top.addWidget(self.bios)
+            layout.addLayout(top)
+            run_async(sysinfo.last_bios_time, self._bios_loaded)
         cols = ["Name", "Publisher", "Status", "Startup impact", "Command"]
+        if win10:
+            cols += ["Startup type", "Running now"]
         self.tree = make_tree(cols)
         self.header = install_header(self.tree)
         self.tree.setHeaderLabels(cols)
         self.header.setFixedHeight(26)
-        for idx, width in enumerate((230, 150, 80, 100, 250)):
-            self.header.resizeSection(idx, width)
+        for idx, width in enumerate((230, 150, 80, 100, 250, 130, 90)):
+            if idx < len(cols):
+                self.header.resizeSection(idx, width)
+        if win10:
+            from .common import column_menu
+            column_menu(self.tree, cols)
         self.tree.sortByColumn(0, Qt.SortOrder.AscendingOrder)
         self.tree.customContextMenuRequested.connect(self._menu)
         self.tree.itemSelectionChanged.connect(self._sel_changed)
@@ -108,6 +128,31 @@ class StartupTab(QtWidgets.QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         self.refresh()
+
+    def _bios_loaded(self, seconds, error):
+        if error is None and seconds is not None:
+            self.bios.setText("Last BIOS time:  {:.1f} seconds".format(seconds))
+        else:
+            self.bios.setText("Last BIOS time:  not reported by this system")
+
+    def update_snapshot(self, snap):
+        """Windows 10 *Running now*: is the startup program currently running?"""
+        names = set()
+        for proc in snap.procs.values():
+            names.add(proc.name)
+            if proc.exe:
+                names.add(os.path.basename(proc.exe))
+        if names != self.running:
+            self.running = names
+            self._fill_running()
+
+    def _fill_running(self):
+        if not self.win10:
+            return
+        for key, item in self.sync.items.items():
+            entry = self.entries.get(key)
+            program = exec_program(entry.command) if entry else ""
+            set_cell(item, 6, "Running" if program and program in self.running else "")
 
     def refresh(self):
         run_async(startup.list_startup, self._loaded)
@@ -128,7 +173,10 @@ class StartupTab(QtWidgets.QWidget):
                 set_cell(item, 2, entry.status)
                 set_cell(item, 3, entry.impact)
                 set_cell(item, 4, entry.command)
+                if self.win10:
+                    set_cell(item, 5, entry.source)
             self.sync.end()
+        self._fill_running()
         self._sel_changed()
 
     def _current(self):

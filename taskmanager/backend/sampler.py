@@ -13,6 +13,7 @@ import psutil
 
 from . import sysinfo
 from .apps import AppRegistry
+from .gpu import GpuSampler
 
 KIND_APP = "app"
 KIND_BACKGROUND = "background"
@@ -66,6 +67,11 @@ class ProcInfo:
     app_name: str = ""
     description: str = ""
     icon: str = ""
+    euid: int = -1
+    gpu: float = 0.0  # busiest GPU engine, percent
+    gpu_engine: str = ""  # e.g. "GPU 0 - 3D"
+    gpu_dedicated: int = 0
+    gpu_shared: int = 0
 
     @property
     def display_name(self):
@@ -98,6 +104,7 @@ class MemSample:
     commit_limit: int = 0
     swap_total: int = 0
     swap_used: int = 0
+    compressed: int = 0
 
     @property
     def percent(self):
@@ -117,6 +124,7 @@ class DiskSample:
     mountpoints: list = field(default_factory=list)
     system_disk: bool = False
     page_file: bool = False
+    kind: str = ""  # SSD / HDD / Removable
 
     @property
     def label(self):
@@ -135,6 +143,8 @@ class NetSample:
     is_up: bool = False
     ipv4: str = ""
     ipv6: str = ""
+    ssid: str = ""
+    signal: object = None  # (bars 0..4, dBm) for Wi-Fi
 
     @property
     def utilization(self):
@@ -158,6 +168,7 @@ class Snapshot:
     users: list = field(default_factory=list)
     disk_total_bps: float = 0.0
     net_total_bps: float = 0.0
+    gpus: list = field(default_factory=list)
 
     @property
     def uptime(self):
@@ -198,6 +209,11 @@ class Sampler:
         self._disk_static = {}
         self.boot_time = psutil.boot_time()
         self.ncpu = psutil.cpu_count() or 1
+        self._ssid_cache = {}  # iface -> (timestamp, ssid)
+        try:
+            self.gpu = GpuSampler()
+        except OSError:
+            self.gpu = None
 
     # -- helpers ---------------------------------------------------------
     def _lookup_app(self, name, exe, cmd0):
@@ -234,6 +250,11 @@ class Sampler:
         self._sample_procs(snap, dt)
         self._sample_disks(snap, dt)
         self._sample_nets(snap, dt)
+        if self.gpu is not None and self.gpu.available:
+            try:
+                snap.gpus = self.gpu.sample(snap.procs, dt)
+            except OSError:
+                snap.gpus = []
         snap.handles = sysinfo.open_handles()
         try:
             snap.users = psutil.users()
@@ -277,6 +298,7 @@ class Sampler:
             m.page_tables = info.get("PageTables", 0)
             m.commit = info.get("Committed_AS", m.used)
             m.commit_limit = info.get("CommitLimit", m.total + m.swap_total)
+            m.compressed = sysinfo.compressed_memory(info)
         else:
             m.commit = m.used + m.swap_used
             m.commit_limit = m.total + m.swap_total
@@ -308,6 +330,7 @@ class Sampler:
                 cmdline=_short_cmdline(cmdline, 4096),
                 username=info.get("username") or (str(uids.real) if uids else ""),
                 uid=uids.real if uids else -1,
+                euid=uids.effective if uids else -1,
                 status=STATUS_LABELS.get(info.get("status"), "Running"),
                 cpu_time=cpu_time,
                 mem_private=max(0, private),
@@ -371,6 +394,7 @@ class Sampler:
             d = DiskSample(name=name, model=sysinfo.disk_model(name), capacity=sysinfo.disk_capacity(name))
             d.mountpoints, d.formatted, d.page_file = self._disk_meta(name)
             d.system_disk = "/" in d.mountpoints
+            d.kind = sysinfo.disk_type(name)
             prev = self._prev_disk.get(name)
             if prev is not None and dt > 0:
                 d.read_bps = max(0, cur.read_bytes - prev.read_bytes) / dt
@@ -405,6 +429,13 @@ class Sampler:
             if st is not None:
                 n.speed_mbps, n.is_up = st.speed, st.isup
             n.ipv4, n.ipv6 = sysinfo.nic_addresses(name, addrs)
+            if n.kind == "Wi-Fi":
+                n.signal = sysinfo.wifi_signal(name)
+                stamp, ssid = self._ssid_cache.get(name, (0.0, ""))
+                if snap.timestamp - stamp > 10:
+                    ssid = sysinfo.wifi_ssid(name)
+                    self._ssid_cache[name] = (snap.timestamp, ssid)
+                n.ssid = ssid
             prev = self._prev_net.get(name)
             if prev is not None and dt > 0:
                 n.sent_bps = max(0, cur.bytes_sent - prev.bytes_sent) / dt

@@ -1,7 +1,7 @@
 # Task Manager for UNIX
 
-A Task Manager for Linux, macOS and the BSDs that recreates **both** classic
-Windows layouts:
+A Task Manager for Linux, macOS and the BSDs that recreates three Windows
+layouts:
 
 * **Windows 7**: Applications, Processes, Services, Performance, Networking
   and Users tabs, the black and green CPU/memory meters and history graphs,
@@ -10,6 +10,8 @@ Windows layouts:
   Processes, Performance, App history, Startup, Users, Details and Services
   tabs. It includes the yellow-to-orange heat map, the two-line `12% CPU`
   column headers, and the Performance sidebar with mini graphs.
+* **Windows 10**: the Windows 8 layout plus everything Windows 10 added,
+  including GPU monitoring and the Power usage columns (listed below).
 
 You can switch layouts at any time from the *View* menu. The app remembers
 the last layout you used.
@@ -18,6 +20,11 @@ the last layout you used.
 |---|---|
 | ![Windows 7 performance tab](docs/win7-performance.png) | ![Windows 8 performance tab](docs/win8-performance.png) |
 
+![Windows 10 GPU page](docs/win10-gpu.png)
+
+*The Windows 10 GPU page. The screenshot machine has no GPU, so it was
+taken with simulated GPU data.*
+
 ## Running
 
 ```bash
@@ -25,7 +32,10 @@ pip install -r requirements.txt
 python3 -m taskmanager            # last used layout (Windows 8 on first start)
 python3 -m taskmanager --win7     # Windows 7 layout
 python3 -m taskmanager --win8     # Windows 8 layout
+python3 -m taskmanager --win10    # Windows 10 layout
 ```
+
+You can also switch from *View > Layout* in any layout.
 
 Or install it, which adds a `taskmanager` command, and optionally add the
 launcher entry:
@@ -97,6 +107,34 @@ PySide6 (or PyQt6, which is used automatically if PySide6 is missing).
 * **Details:** the flat process table, with *Select columns*, Set
   priority/affinity, and *Go to service(s)*.
 
+### Windows 10 layout
+
+Everything in the Windows 8 layout, plus:
+
+* **Processes:** *GPU* and *GPU engine* columns (e.g. `GPU 0 - 3D`), and
+  *Power usage* and *Power usage trend* (Very low to Very high). The GPU
+  column header shows overall GPU use.
+* **Performance:**
+  * A page for each GPU, with four engine graphs (each graph has a dropdown
+    to pick its engine: 3D, Copy, Video Encode, Video Decode, Compute and so
+    on). It also has dedicated and shared GPU memory graphs, and the driver,
+    driver version and physical location (`PCI bus 3, device 0, function 0`).
+  * CPU *Base speed*.
+  * Memory: *In use (Compressed)*, plus Speed, Slots used, Form factor and
+    Hardware reserved.
+  * Disk type (SSD/HDD/Removable) in the sidebar and on the disk page.
+  * Wi-Fi SSID and signal strength.
+  * Right-click the sidebar to *Hide graphs*.
+* **Startup:** *Last BIOS time* (firmware time from `systemd-analyze`), and
+  *Startup type* and *Running now* columns.
+* **Users:** GPU columns.
+* **Details:** *Architecture* (read from the executable's ELF or Mach-O
+  header), *Elevated*, *GPU*, *GPU engine*, and *Dedicated* and *Shared GPU
+  memory*.
+* **Options:** *Set default tab*, *Show full account name* (`Full Name (user)`
+  on the Users tab), and *Show history for all processes* on the App history
+  tab.
+
 ## How Windows concepts map to UNIX
 
 | Windows | This implementation |
@@ -108,9 +146,17 @@ PySide6 (or PyQt6, which is used automatically if PySide6 is missing).
 | Paged / non-paged pool | Kernel slab / kernel stack (`/proc/meminfo`) |
 | Commit charge | `Committed_AS` / `CommitLimit` |
 | Priority classes | nice values (Realtime -20, High -10, Above normal -5, Normal 0, Below normal 5, Low 19) |
+| GPU usage per process | DRM client stats in `/proc/<pid>/fdinfo` (Linux 5.19+: amdgpu, i915, xe, msm, panfrost, ...). A process' GPU % is its busiest engine, as on Windows |
+| GPU totals | `gpu_busy_percent` / `mem_info_*` in sysfs (amdgpu), or `nvidia-smi` |
+| Power usage | An estimate from CPU, GPU and disk activity (Windows estimates it too). Power usage trend averages it over about 2 minutes |
+| Elevated | Running with effective UID 0 |
+| Last BIOS time | The firmware time reported by `systemd-analyze` |
+| RAM speed / slots / form factor | SMBIOS type 17 tables in `/sys/firmware/dmi`; these need root, otherwise they show N/A |
 
 UNIX doesn't report network usage per process without packet capture, so the
-Windows 8 per-process *Network* column shows `–`. The header still shows
+per-process *Network* column shows `–` in the Windows 8 and 10 layouts. With NVIDIA's proprietary
+driver, GPU use is shown per device only (from `nvidia-smi`), because that
+driver doesn't publish per-process statistics in `fdinfo`. The header still shows
 overall network utilization. Adapters that don't report a link speed are
 measured against 1 Gbps.
 
@@ -128,7 +174,9 @@ The code is split into a few parts:
 * `taskmanager/core.py`: the background sampling thread.
 * `taskmanager/widgets/`: the painted graphs and meters, plus the dialogs and
   Services panel that both layouts share.
-* `taskmanager/win7/` and `taskmanager/win8/`: one package per layout.
+* `taskmanager/win7/`, `taskmanager/win8/` and `taskmanager/win10/`: one
+  package per layout. The Windows 10 window builds on the Windows 8 one, with
+  `win10=True` switching on the extra columns and pages.
 
 ## License
 

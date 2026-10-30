@@ -5,8 +5,8 @@ from ..backend.formatting import (fmt_bits, fmt_cache, fmt_freq, fmt_gb, fmt_lin
                                   fmt_uptime)
 from ..qt import QtGui, QtWidgets, Qt, Signal
 from ..widgets.dialogs import show_error
-from ..widgets.graph import (WIN8_CPU, WIN8_DISK, WIN8_MEM, WIN8_NET, CompositionBar, HistoryGraph,
-                             nice_ceiling, win8_style)
+from ..widgets.graph import (WIN8_CPU, WIN8_DISK, WIN8_GPU, WIN8_MEM, WIN8_NET, CompositionBar,
+                             HistoryGraph, nice_ceiling, win8_style)
 from .common import LinkButton, bottom_bar
 
 GRAY = "#707070"
@@ -201,8 +201,9 @@ class DetailPage(QtWidgets.QWidget):
 
 
 class CpuPage(DetailPage):
-    def __init__(self, info, parent=None):
+    def __init__(self, info, win10=False, parent=None):
         super().__init__("CPU", parent)
+        speed_label = "Base speed" if win10 else "Maximum speed"
         self.info = info
         self.subtitle.setText(info.model)
         self.show_kernel = False
@@ -221,12 +222,12 @@ class CpuPage(DetailPage):
         self.stack.addWidget(self.grid_holder)
         self.frame = GraphFrame("% Utilization over 60 seconds", "100%", self.stack)
         self.layout_.addWidget(self.frame, 1)
-        small = ["Maximum speed", "Sockets", "Cores", "Logical processors", "Virtualization"]
+        small = [speed_label, "Sockets", "Cores", "Logical processors", "Virtualization"]
         small += ["{} cache".format(level) for level in sorted(info.caches)]
         self.stats = StatBlock([["Utilization", "Speed"], ["Processes", "Threads", "Handles"], ["Up time"]],
                                small)
         self.layout_.addWidget(self.stats)
-        self.stats.set("Maximum speed", fmt_freq(info.max_mhz))
+        self.stats.set(speed_label, fmt_freq(info.max_mhz))
         self.stats.set("Sockets", str(info.sockets))
         self.stats.set("Cores", str(info.cores))
         self.stats.set("Logical processors", str(info.logical))
@@ -308,8 +309,48 @@ class MemoryPage(DetailPage):
         self.stats.set("Page tables", "{:.0f} MB".format(m.page_tables / 2 ** 20) if m.page_tables else "N/A")
 
 
+class MemoryPage10(DetailPage):
+    """Windows 10 memory page: compressed memory and RAM hardware details."""
+
+    def __init__(self, hardware, parent=None):
+        super().__init__("Memory", parent)
+        self.hw = hardware
+        self.graph = HistoryGraph(win8_style(*WIN8_MEM), POINTS)
+        self.frame = GraphFrame("Memory usage", "", self.graph)
+        self.layout_.addWidget(self.frame, 1)
+        self.layout_.addWidget(_label("Memory composition", 9, GRAY))
+        self.bar = CompositionBar(WIN8_MEM[0])
+        self.layout_.addWidget(self.bar)
+        self.stats = StatBlock([["In use (Compressed)", "Available"], ["Committed", "Cached"],
+                                ["Kernel slab", "Shared"]],
+                               ["Speed", "Slots used", "Form factor", "Hardware reserved", "Swap used"])
+        self.layout_.addWidget(self.stats)
+        self.stats.set("Speed", "{} MHz".format(hardware.speed_mts) if hardware.speed_mts else "N/A")
+        self.stats.set("Slots used", "{} of {}".format(hardware.slots_used, hardware.slots_total)
+                       if hardware.slots_total else "N/A")
+        self.stats.set("Form factor", hardware.form_factor or "N/A")
+
+    def update_snapshot(self, snap):
+        m = snap.mem
+        installed = max(self.hw.installed, m.total)
+        self.subtitle.setText(fmt_gb(installed))
+        self.frame.right.setText(fmt_gb(m.total))
+        self.graph.push(m.percent)
+        standby = max(0, m.cached - m.modified)
+        free = max(0, m.total - m.used - m.modified - standby)
+        self.bar.set_parts(m.used, m.modified, standby, free, m.total)
+        self.stats.set("In use (Compressed)", "{} ({:.0f} MB)".format(fmt_gb(m.used), m.compressed / 2 ** 20))
+        self.stats.set("Available", fmt_gb(m.available))
+        self.stats.set("Committed", "{:.1f}/{:.1f} GB".format(m.commit / 2 ** 30, m.commit_limit / 2 ** 30))
+        self.stats.set("Cached", fmt_gb(m.cached))
+        self.stats.set("Kernel slab", "{:.0f} MB".format(m.slab / 2 ** 20) if m.slab else "N/A")
+        self.stats.set("Shared", "{:.0f} MB".format(m.shared / 2 ** 20))
+        self.stats.set("Hardware reserved", "{:.0f} MB".format((installed - m.total) / 2 ** 20))
+        self.stats.set("Swap used", "{:.1f}/{:.1f} GB".format(m.swap_used / 2 ** 30, m.swap_total / 2 ** 30))
+
+
 class DiskPage(DetailPage):
-    def __init__(self, index, disk, parent=None):
+    def __init__(self, index, disk, win10=False, parent=None):
         super().__init__("Disk {} ({})".format(index, disk.name), parent)
         self.subtitle.setText(disk.model or disk.name)
         self.active = HistoryGraph(win8_style(*WIN8_DISK), POINTS)
@@ -320,11 +361,14 @@ class DiskPage(DetailPage):
         self.rate.autoscale = True
         self.rate_frame = GraphFrame("Disk transfer rate", "", self.rate)
         self.layout_.addWidget(self.rate_frame, 2)
+        self.win10 = win10
         self.stats = StatBlock([["Active time", "Average response time"], ["Read speed", "Write speed"]],
-                               ["Capacity", "Formatted", "System disk", "Swap file"])
+                               ["Capacity", "Formatted", "System disk", "Swap file"] + (["Type"] if win10 else []))
         self.layout_.addWidget(self.stats)
 
     def update_snapshot(self, disk):
+        if self.win10:
+            self.stats.set("Type", disk.kind or "Unknown")
         self.active.push(disk.active)
         self.rate.push(disk.read_bps, disk.write_bps)
         self.rate_frame.right.setText(fmt_rate(self.rate.maximum))
@@ -341,8 +385,9 @@ class DiskPage(DetailPage):
 
 
 class NetPage(DetailPage):
-    def __init__(self, net, parent=None):
+    def __init__(self, net, win10=False, parent=None):
         super().__init__(net.kind, parent)
+        self.wifi = win10 and net.kind == "Wi-Fi"
         self.subtitle.setText(net.name)
         style = win8_style(*WIN8_NET, dashed_second=True)
         style.fills = [WIN8_NET[1], None]
@@ -351,7 +396,9 @@ class NetPage(DetailPage):
         self.frame = GraphFrame("Throughput", "", self.graph)
         self.layout_.addWidget(self.frame, 1)
         self.stats = StatBlock([["Send", "Receive"]],
-                               ["Adapter name", "Connection type", "Link speed", "IPv4 address", "IPv6 address"])
+                               ["Adapter name"] + (["SSID"] if self.wifi else []) +
+                               ["Connection type", "Link speed", "IPv4 address", "IPv6 address"] +
+                               (["Signal strength"] if self.wifi else []))
         self.layout_.addWidget(self.stats)
 
     def update_snapshot(self, net):
@@ -365,15 +412,101 @@ class NetPage(DetailPage):
         self.stats.set("Link speed", fmt_link_speed(net.speed_mbps))
         self.stats.set("IPv4 address", net.ipv4 or "Not connected")
         self.stats.set("IPv6 address", net.ipv6 or "Not connected")
+        if self.wifi:
+            self.stats.set("SSID", net.ssid or "Not connected")
+            self.stats.set("Signal strength", signal_text(net.signal))
+
+
+def signal_text(signal):
+    if signal is None:
+        return "N/A"
+    bars, dbm = signal
+    return "{} {} dBm".format("\u2582\u2584\u2586\u2588"[:bars] or "\u2581", int(dbm))
+
+
+class GpuPage(DetailPage):
+    """Windows 10 GPU page: four selectable engine graphs and GPU memory graphs."""
+
+    DEFAULT_ENGINES = ("3D", "Copy", "Video Encode", "Video Decode")
+
+    def __init__(self, gpu, parent=None):
+        super().__init__(gpu.title, parent)
+        self.subtitle.setText(gpu.name)
+        grid = QtWidgets.QGridLayout()
+        grid.setSpacing(8)
+        self.engine_graphs = []
+        for idx, engine in enumerate(self.DEFAULT_ENGINES):
+            cell = QtWidgets.QVBoxLayout()
+            cell.setSpacing(2)
+            top = QtWidgets.QHBoxLayout()
+            combo = QtWidgets.QComboBox()
+            combo.addItem(engine)
+            combo.setStyleSheet("QComboBox { border: none; color: #707070; background: transparent; }")
+            pct = _label("0%", 9, GRAY)
+            top.addWidget(combo)
+            top.addStretch(1)
+            top.addWidget(pct)
+            graph = HistoryGraph(win8_style(*WIN8_GPU), POINTS)
+            graph.gstyle.rows, graph.gstyle.cols = 5, 10
+            graph.setMinimumHeight(60)
+            cell.addLayout(top)
+            cell.addWidget(graph, 1)
+            grid.addLayout(cell, idx // 2, idx % 2)
+            combo.currentTextChanged.connect(lambda _text, g=graph: g.clear())
+            self.engine_graphs.append((combo, pct, graph))
+        self.layout_.addLayout(grid, 3)
+        self.dedicated = HistoryGraph(win8_style(*WIN8_GPU), POINTS)
+        self.dedicated.gstyle.rows = 4
+        self.dedicated_frame = GraphFrame("Dedicated GPU memory usage", "", self.dedicated, footer=False)
+        self.layout_.addWidget(self.dedicated_frame, 1)
+        self.shared = HistoryGraph(win8_style(*WIN8_GPU), POINTS)
+        self.shared.gstyle.rows = 4
+        self.shared_frame = GraphFrame("Shared GPU memory usage", "", self.shared, footer=False)
+        self.layout_.addWidget(self.shared_frame, 1)
+        self.stats = StatBlock([["Utilization", "Dedicated GPU memory"], ["Shared GPU memory", "GPU Memory"]],
+                               ["Driver", "Driver version", "Physical location", "Vendor"])
+        self.layout_.addWidget(self.stats)
+
+    def update_snapshot(self, gpu):
+        for combo, pct, graph in self.engine_graphs:
+            for engine in sorted(gpu.engines):
+                if combo.findText(engine) < 0:
+                    combo.addItem(engine)
+            value = gpu.engines.get(combo.currentText(), 0.0)
+            graph.push(value)
+            pct.setText("{:.0f}%".format(value))
+        for graph, frame, used, total in ((self.dedicated, self.dedicated_frame, gpu.dedicated_used,
+                                           gpu.dedicated_total),
+                                          (self.shared, self.shared_frame, gpu.shared_used, gpu.shared_total)):
+            graph.maximum = float(total) if total else nice_ceiling(max(used, graph.maximum, 1))
+            graph.push(float(used))
+            frame.right.setText(fmt_gb(graph.maximum))
+        self.stats.set("Utilization", "{:.0f}%".format(gpu.utilization))
+        self.stats.set("Dedicated GPU memory", _used_of(gpu.dedicated_used, gpu.dedicated_total))
+        self.stats.set("Shared GPU memory", _used_of(gpu.shared_used, gpu.shared_total))
+        self.stats.set("GPU Memory", _used_of(gpu.dedicated_used + gpu.shared_used,
+                                              gpu.dedicated_total + gpu.shared_total))
+        self.stats.set("Driver", gpu.driver or "N/A")
+        self.stats.set("Driver version", gpu.driver_version or "N/A")
+        self.stats.set("Physical location", gpu.location or "N/A")
+        self.stats.set("Vendor", gpu.vendor or "N/A")
+
+
+def _used_of(used, total):
+    if total:
+        return "{:.1f}/{:.1f} GB".format(used / 2 ** 30, total / 2 ** 30)
+    return "{:.1f} GB".format(used / 2 ** 30)
 
 
 class PerformanceTab(QtWidgets.QWidget):
     summary_toggled = Signal(bool)
 
-    def __init__(self, parent=None):
+    def __init__(self, win10=False, parent=None):
         super().__init__(parent)
         self.setObjectName("win8page")
+        self.win10 = win10
         self.summary = False
+        self.graphs_hidden = False
         outer = QtWidgets.QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
@@ -390,6 +523,8 @@ class PerformanceTab(QtWidgets.QWidget):
         scroll.setWidget(self.side_widget)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setFixedWidth(220)
+        self.side_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.side_widget.customContextMenuRequested.connect(self._side_menu)
         scroll.setStyleSheet("QScrollArea { border: none; border-right: 1px solid #E5E5E5; }")
         self.scroll = scroll
         body.addWidget(scroll)
@@ -406,8 +541,9 @@ class PerformanceTab(QtWidgets.QWidget):
         self.items = {}
         self.page_for = {}
         self.cpu_info = sysinfo.get_cpu_info()
-        self._add("cpu", "CPU", WIN8_CPU, CpuPage(self.cpu_info))
-        self._add("mem", "Memory", WIN8_MEM, MemoryPage())
+        self._add("cpu", "CPU", WIN8_CPU, CpuPage(self.cpu_info, win10))
+        self._add("mem", "Memory", WIN8_MEM,
+                  MemoryPage10(sysinfo.memory_hardware()) if win10 else MemoryPage())
         self.disk_index = {}
         self.select("cpu")
 
@@ -415,6 +551,9 @@ class PerformanceTab(QtWidgets.QWidget):
         item = SideItem(key, title, colors, series)
         item.clicked.connect(self.select)
         item.double_clicked.connect(self.toggle_summary)
+        item.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        item.customContextMenuRequested.connect(lambda pos, w=item: self._side_menu(pos, w))
+        item.graph.setVisible(not self.graphs_hidden)
         self.side.insertWidget(self.side.count() - 1, item)
         self.items[key] = item
         self.pages.addWidget(page)
@@ -443,6 +582,24 @@ class PerformanceTab(QtWidgets.QWidget):
                                   "QScrollArea { border: none; border-right: 1px solid #E5E5E5; }")
         self.summary_toggled.emit(self.summary)
 
+    def _side_menu(self, pos, widget=None):
+        widget = widget or self.side_widget
+        menu = QtWidgets.QMenu(self)
+        if self.win10:
+            hide = menu.addAction("Hide graphs", self.set_graphs_hidden)
+            hide.setCheckable(True)
+            hide.setChecked(self.graphs_hidden)
+        summary = menu.addAction("Summary view", self.toggle_summary)
+        summary.setCheckable(True)
+        summary.setChecked(self.summary)
+        menu.exec(widget.mapToGlobal(pos))
+
+    def set_graphs_hidden(self, hidden):
+        """Windows 10: right-click the sidebar > *Hide graphs*."""
+        self.graphs_hidden = hidden
+        for item in self.items.values():
+            item.graph.setVisible(not hidden)
+
     def _resmon(self):
         try:
             actions.open_resource_monitor()
@@ -466,9 +623,12 @@ class PerformanceTab(QtWidgets.QWidget):
             keys.add(key)
             if key not in self.items:
                 idx = self.disk_index.setdefault(disk.name, len(self.disk_index))
-                self._add(key, "Disk {} ({})".format(idx, disk.name), WIN8_DISK, DiskPage(idx, disk))
+                self._add(key, "Disk {} ({})".format(idx, disk.name), WIN8_DISK, DiskPage(idx, disk, self.win10))
             self.items[key].graph.push(disk.active)
-            self.items[key].set_text("{:.0f}%".format(disk.active))
+            if self.win10 and disk.kind:
+                self.items[key].set_text(disk.kind, "{:.0f}%".format(disk.active))
+            else:
+                self.items[key].set_text("{:.0f}%".format(disk.active))
             self.page_for[key].update_snapshot(disk)
         for net in snap.nets:
             if not net.is_up:
@@ -476,14 +636,24 @@ class PerformanceTab(QtWidgets.QWidget):
             key = "net:" + net.name
             keys.add(key)
             if key not in self.items:
-                item = self._add(key, net.kind, WIN8_NET, NetPage(net), series=2)
+                item = self._add(key, net.kind, WIN8_NET, NetPage(net, self.win10), series=2)
                 item.graph.autoscale = True
             item = self.items[key]
             item.graph.push(net.sent_bps * 8, net.recv_bps * 8)
             item.graph.maximum = nice_ceiling(max(item.graph.maximum, 100e3))
-            item.set_text(net.name, "S: {} R: {}".format(fmt_bits(net.sent_bps), fmt_bits(net.recv_bps)))
+            name = net.ssid if self.win10 and net.ssid else net.name
+            item.set_text(name, "S: {} R: {}".format(fmt_bits(net.sent_bps), fmt_bits(net.recv_bps)))
             self.page_for[key].update_snapshot(net)
-        for key in [k for k in self.items if k.startswith(("disk:", "net:")) and k not in keys]:
+        if self.win10:
+            for gpu in snap.gpus:
+                key = "gpu:{}".format(gpu.index)
+                keys.add(key)
+                if key not in self.items:
+                    self._add(key, gpu.title, WIN8_GPU, GpuPage(gpu))
+                self.items[key].graph.push(gpu.utilization)
+                self.items[key].set_text(gpu.name, "{:.0f}%".format(gpu.utilization))
+                self.page_for[key].update_snapshot(gpu)
+        for key in [k for k in self.items if k.startswith(("disk:", "net:", "gpu:")) and k not in keys]:
             if self.current == key:
                 self.select("cpu")
             self._remove(key)

@@ -36,7 +36,7 @@ def _wait_for_snapshot(app, controller, count=2, timeout=10000):
     return seen
 
 
-@pytest.mark.parametrize("layout", ["win7", "win8"])
+@pytest.mark.parametrize("layout", ["win7", "win8", "win10"])
 def test_layout_renders_every_tab(qapp, layout):
     from taskmanager.app import Controller
     controller = Controller(qapp, layout)
@@ -53,9 +53,9 @@ def test_layout_renders_every_tab(qapp, layout):
         window.on_snapshot(snap)
         from taskmanager.widgets.dialogs import process_menu
         me = snap.procs[os.getpid()]
-        texts = [a.text() for a in process_menu(window, me, win8=layout == "win8").actions()]
-        assert ("End task" if layout == "win8" else "End Process") in texts
-        if layout == "win8":
+        texts = [a.text() for a in process_menu(window, me, win8=layout != "win7").actions()]
+        assert ("End task" if layout != "win7" else "End Process") in texts
+        if layout in ("win8", "win10"):
             window.set_compact(True)
             window.on_snapshot(snap)
             window.set_compact(False)
