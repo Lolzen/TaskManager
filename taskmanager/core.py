@@ -122,7 +122,14 @@ class _Task(QtCore.QRunnable):
             result, error = self.fn(), None
         except Exception as exc:  # noqa: BLE001 - reported to the callback
             result, error = None, exc
-        self.relay.done.emit(result, error)
+        # When the application quits while fn() runs, interpreter teardown can
+        # delete the relay first. PyQt6 aborts on an exception escaping run(),
+        # and there is nobody left to deliver the result to anyway.
+        try:
+            if is_alive(self.relay):
+                self.relay.done.emit(result, error)
+        except RuntimeError:
+            pass
 
 
 _relays = set()

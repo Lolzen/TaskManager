@@ -216,6 +216,10 @@ class Controller(QtCore.QObject):
     def _shutdown(self):
         self.history.save()
         self.sampler.stop()
+        # drop queued background work and give running tasks (systemctl, ...) a moment
+        pool = QtCore.QThreadPool.globalInstance()
+        pool.clear()
+        pool.waitForDone(3000)
         if self.tray is not None:
             self.tray.hide()
 

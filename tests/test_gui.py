@@ -192,3 +192,29 @@ def test_late_background_result_after_layout_switch(qapp, monkeypatch):
         controller.window._switching = True
         controller.window.close()
         controller._shutdown()
+
+
+def test_exit_while_background_task_runs():
+    """Quitting while e.g. the services list still loads must not crash.
+
+    The result then arrives after Python has deleted its Qt relay object; with
+    PyQt6 the resulting exception in the worker thread aborted the process.
+    Runs in a subprocess because the failure mode is the process dying.
+    """
+    import subprocess
+    import sys
+    import textwrap
+
+    script = textwrap.dedent("""
+        import sys, time
+        from taskmanager.qt import QtWidgets
+        from taskmanager.core import run_async
+        app = QtWidgets.QApplication(["t"])
+        run_async(lambda: time.sleep(1.0), lambda result, error: None)
+        time.sleep(0.1)
+        sys.exit(0)  # interpreter teardown deletes the relay while the task runs
+    """)
+    env = dict(os.environ, QT_QPA_PLATFORM="offscreen")
+    proc = subprocess.run([sys.executable, "-c", script], env=env, capture_output=True, text=True,
+                          timeout=60, cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    assert proc.returncode == 0, proc.stderr[-2000:]
