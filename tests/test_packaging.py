@@ -1,0 +1,36 @@
+"""The distribution recipes must stay in step with the package."""
+
+import os
+import re
+
+import taskmanager
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def read(*parts):
+    with open(os.path.join(ROOT, *parts), encoding="utf-8") as fh:
+        return fh.read()
+
+
+def test_versions_match():
+    version = taskmanager.__version__
+    assert re.search(r"^pkgver={}$".format(re.escape(version)), read("packaging", "arch", "PKGBUILD"), re.M)
+    assert re.search(r"^version={}$".format(re.escape(version)),
+                     read("packaging", "void", "srcpkgs", "taskmanager", "template"), re.M)
+    assert read("packaging", "debian", "changelog").startswith("taskmanager ({}-".format(version))
+    assert '"taskmanager {}"'.format(version) in read("data", "taskmanager.1")
+
+
+def test_recipes_install_the_same_files():
+    for recipe in (read("packaging", "arch", "PKGBUILD"),
+                   read("packaging", "void", "srcpkgs", "taskmanager", "template")):
+        assert "taskmanager.desktop" in recipe and "taskmanager.1" in recipe and "LICENSE" in recipe
+    assert "taskmanager.desktop" in read("packaging", "debian", "taskmanager.install")
+    assert "taskmanager.1" in read("packaging", "debian", "taskmanager.manpages")
+
+
+def test_qt_dependencies_name_the_widgets_module():
+    # Void and Debian split PySide6 per Qt module; QtCore alone is not enough
+    assert "python3-pyside6-widgets" in read("packaging", "void", "srcpkgs", "taskmanager", "template")
+    assert "python3-pyside6.qtwidgets" in read("packaging", "debian", "control")

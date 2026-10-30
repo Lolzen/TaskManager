@@ -1,0 +1,21 @@
+# Template file for 'taskmanager'
+pkgname=taskmanager
+version=1.0.0
+revision=1
+build_style=python3-pep517
+hostmakedepends="python3-setuptools python3-wheel"
+depends="python3-psutil python3-pyside6-widgets"
+checkdepends="python3-pytest ${depends}"
+short_desc="Windows 7, 8 and 10 style Task Manager with a Linux Tux mode"
+maintainer="Lolzen <lolzen@users.noreply.github.com>"
+license="WTFPL"
+homepage="https://github.com/Lolzen/TaskManager"
+distfiles="https://github.com/Lolzen/TaskManager/archive/refs/tags/v${version}.tar.gz"
+checksum=0000000000000000000000000000000000000000000000000000000000000000
+make_check_pre="env QT_QPA_PLATFORM=offscreen"
+
+post_install() {
+	vinstall data/taskmanager.desktop 644 usr/share/applications
+	vman data/taskmanager.1
+	vlicense LICENSE
+}

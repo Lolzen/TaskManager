@@ -117,7 +117,7 @@ class Win7Window(QtWidgets.QMainWindow):
         self.act_full.setCheckable(True)
 
         view = mb.addMenu("&View")
-        view.addAction("&Refresh Now", c.sampler.refresh_now, QtGui.QKeySequence("F5"))
+        view.addAction("&Refresh Now", c.sampler.refresh_now).setShortcut(QtGui.QKeySequence("F5"))
         speed = view.addMenu("&Update Speed")
         group = QtGui.QActionGroup(speed)
         for name in ("High", "Normal", "Low", "Paused"):

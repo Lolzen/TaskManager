@@ -90,7 +90,7 @@ class Win8Window(QtWidgets.QMainWindow):
             act.setChecked(value)
 
         view = mb.addMenu("&View")
-        view.addAction("&Refresh now", c.sampler.refresh_now, QtGui.QKeySequence("F5"))
+        view.addAction("&Refresh now", c.sampler.refresh_now).setShortcut(QtGui.QKeySequence("F5"))
         speed = view.addMenu("&Update speed")
         group = QtGui.QActionGroup(speed)
         for name in ("High", "Normal", "Low", "Paused"):

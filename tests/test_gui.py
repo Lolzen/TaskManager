@@ -112,3 +112,48 @@ def test_tux_mode_adds_tab_and_columns(qapp, layout):
         controller.window._switching = True
         controller.window.close()
         controller._shutdown()
+
+
+def test_dialogs_and_menus_build(qapp):
+    """Exercise the code paths the layout tests do not reach (both Qt bindings)."""
+    from taskmanager.app import Controller
+    from taskmanager.widgets import dialogs
+    from taskmanager.widgets.tree import ColumnChooser
+    controller = Controller(qapp, "win10", tux=True)
+    controller.set_speed("High")
+    try:
+        _wait_for_snapshot(qapp, controller, count=2)
+        window = controller.window
+        snap = controller.sampler.last
+        me = snap.procs[os.getpid()]
+        for widget in (dialogs.RunDialog(window, win8=True), dialogs.RunDialog(window),
+                       dialogs.AffinityDialog("x", [0], 2, window), dialogs.PropertiesDialog(me, window),
+                       dialogs.AboutDialog(window, "Task Manager"),
+                       ColumnChooser("t", "x", ["A", "B"], ["A"], window)):
+            widget.show()
+            qapp.processEvents()
+            widget.close()
+        for win8 in (False, True):
+            menu = dialogs.process_menu(window, me, win8=win8)
+            assert menu.actions()
+        # every menu bar entry can be built and its submenus listed
+        for action in window.menuBar().actions():
+            assert action.menu() is not None and action.menu().actions()
+        window.procs.update_snapshot(snap)
+        window.procs.set_group_by_type(False)
+        window.procs.set_group_by_type(True)
+        window.perf.set_graphs_hidden(True)
+        window.perf.toggle_summary()
+        window.perf.toggle_summary()
+        window.perf.page_for["cpu"].set_logical(True)
+        window.perf.page_for["cpu"].copy()
+        window.set_compact(True)
+        window.set_compact(False)
+        controller.switch_layout("win7")
+        controller.window.procs.choose_columns  # attribute exists
+        controller.window.perf.set_cpu_mode(False)
+        controller.window.on_snapshot(snap)
+    finally:
+        controller.window._switching = True
+        controller.window.close()
+        controller._shutdown()

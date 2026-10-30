@@ -1,0 +1,63 @@
+.TH TASKMANAGER 1 "2026-10-30" "taskmanager 1.0.0" "User Commands"
+.SH NAME
+taskmanager \- Windows 7, 8 and 10 style Task Manager for Linux, macOS and BSD
+.SH SYNOPSIS
+.B taskmanager
+[\fB\-\-win7\fR | \fB\-\-win8\fR | \fB\-\-win10\fR | \fB\-\-layout\fR \fILAYOUT\fR]
+[\fB\-\-tux\fR | \fB\-\-no\-tux\fR]
+.SH DESCRIPTION
+.B taskmanager
+shows running applications, processes, services, startup programs, users
+and live performance graphs, laid out like the Task Manager of Windows 7,
+Windows 8 or Windows 10.
+.PP
+.I Tux mode
+keeps the chosen layout and adds the information only Linux provides:
+kernel process states, systemd units, cgroups, OOM scores, USS/PSS memory,
+pressure stall information, sensors, CPU vulnerabilities and more, plus a
+dedicated
+.I Tux
+tab.
+.PP
+The layout and Tux mode can also be changed at run time from the
+.I View
+menu. Both choices are remembered.
+.SH OPTIONS
+.TP
+.BR \-\-win7 ", " \-\-win8 ", " \-\-win10
+Start with the Windows 7, Windows 8 or Windows 10 layout.
+.TP
+.BI \-\-layout " LAYOUT"
+Same as above, with
+.I LAYOUT
+being one of
+.BR win7 ", " win8 " or " win10 .
+.TP
+.B \-\-tux
+Turn Tux mode on.
+.TP
+.B \-\-no\-tux
+Turn Tux mode off.
+.TP
+.B \-\-version
+Print the version and exit.
+.SH ENVIRONMENT
+.TP
+.B TASKMANAGER_QT
+Force the Qt binding:
+.B pyside6
+or
+.BR pyqt6 .
+By default PySide6 is used when installed, otherwise PyQt6.
+.SH FILES
+.TP
+.I ~/.config/TaskManager/TaskManager.conf
+Settings (layout, Tux mode, columns, window sizes).
+.TP
+.I ~/.local/share/taskmanager/app_history.json
+Resource usage collected for the App history tab.
+.SH SEE ALSO
+.BR ps (1),
+.BR top (1),
+.BR systemctl (1),
+.BR proc (5)

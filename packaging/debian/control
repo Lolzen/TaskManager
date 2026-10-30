@@ -1,0 +1,33 @@
+Source: taskmanager
+Section: utils
+Priority: optional
+Maintainer: Lolzen <lolzen@users.noreply.github.com>
+Build-Depends: debhelper-compat (= 13),
+               dh-python,
+               pybuild-plugin-pyproject,
+               python3-all,
+               python3-setuptools,
+               python3-psutil <!nocheck>,
+               python3-pyqt6 <!nocheck>,
+               python3-pytest <!nocheck>
+Standards-Version: 4.6.2
+Homepage: https://github.com/Lolzen/TaskManager
+Vcs-Browser: https://github.com/Lolzen/TaskManager
+Vcs-Git: https://github.com/Lolzen/TaskManager.git
+Rules-Requires-Root: no
+
+Package: taskmanager
+Architecture: all
+Depends: ${misc:Depends},
+         ${python3:Depends},
+         python3-psutil,
+         python3-pyqt6 | python3-pyside6.qtwidgets
+Suggests: pciutils, pkexec, wmctrl, wireless-tools
+Description: Windows 7, 8 and 10 style Task Manager with a Linux "Tux mode"
+ Shows running applications, processes, services, startup programs, users
+ and live CPU, memory, disk, network and GPU graphs, laid out like the Task
+ Manager of Windows 7, Windows 8 or Windows 10.
+ .
+ Tux mode keeps the chosen layout and adds what only Linux reports: kernel
+ process states, systemd units, cgroups, OOM scores, USS/PSS memory,
+ pressure stall information, sensors and CPU vulnerabilities.

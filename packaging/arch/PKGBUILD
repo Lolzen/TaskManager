@@ -1,0 +1,37 @@
+# Maintainer: Lolzen <lolzen@users.noreply.github.com>
+pkgname=taskmanager
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Windows 7, 8 and 10 style Task Manager with a Linux Tux mode"
+arch=('any')
+url="https://github.com/Lolzen/TaskManager"
+license=('WTFPL')
+depends=('python' 'python-psutil' 'pyside6')
+makedepends=('python-build' 'python-installer' 'python-setuptools' 'python-wheel')
+checkdepends=('python-pytest')
+optdepends=('python-pyqt6: alternative Qt binding'
+            'polkit: start and stop system services'
+            'wmctrl: list windows on the Applications tab (X11)'
+            'pciutils: GPU names'
+            'iw: Wi-Fi network name'
+            'nvidia-utils: NVIDIA GPU statistics')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')  # replace with the release checksum (updpkgsums) once v$pkgver is tagged
+
+build() {
+  cd "TaskManager-$pkgver"
+  python -m build --wheel --no-isolation
+}
+
+check() {
+  cd "TaskManager-$pkgver"
+  QT_QPA_PLATFORM=offscreen python -m pytest -q tests
+}
+
+package() {
+  cd "TaskManager-$pkgver"
+  python -m installer --destdir="$pkgdir" dist/*.whl
+  install -Dm644 data/taskmanager.desktop "$pkgdir/usr/share/applications/taskmanager.desktop"
+  install -Dm644 data/taskmanager.1 "$pkgdir/usr/share/man/man1/taskmanager.1"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

@@ -1,0 +1,5 @@
+taskmanager (1.0.0-1) noble; urgency=medium
+
+  * Initial release: Windows 7, 8 and 10 layouts and Tux mode.
+
+ -- Lolzen <lolzen@users.noreply.github.com>  Fri, 30 Oct 2026 17:00:00 +0000

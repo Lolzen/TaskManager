@@ -55,8 +55,28 @@ pip install .
 cp data/taskmanager.desktop ~/.local/share/applications/
 ```
 
-Requirements: Python 3.8+, [psutil](https://github.com/giampaolo/psutil), and
-PySide6 (or PyQt6, which is used automatically if PySide6 is missing).
+Requirements: Python 3.9+, [psutil](https://github.com/giampaolo/psutil), and
+PySide6 (or PyQt6, which is used automatically if PySide6 is missing; set
+`TASKMANAGER_QT=pyqt6` or `pyside6` to choose).
+
+### Distribution packages
+
+There are tested package recipes for **Ubuntu 24.04+**, **Arch Linux** and
+**Void Linux** in [`packaging/`](packaging/README.md), with build scripts and
+CI jobs that build, install and test each package. To install the
+dependencies from the distribution instead:
+
+```bash
+sudo apt install python3-psutil python3-pyqt6                 # Ubuntu 24.04+
+```
+
+```bash
+sudo pacman -S python-psutil pyside6                          # Arch Linux
+```
+
+```bash
+sudo xbps-install python3-psutil python3-pyside6-widgets      # Void Linux
+```
 
 ## Features
 
