@@ -5,12 +5,11 @@ from ..backend.formatting import (fmt_bits, fmt_cache, fmt_freq, fmt_gb, fmt_lin
                                   fmt_uptime)
 from ..qt import QtGui, QtWidgets, Qt, Signal
 from ..widgets.dialogs import show_error
-from ..widgets.graph import (WIN8_CPU, WIN8_DISK, WIN8_GPU, WIN8_MEM, WIN8_NET, CompositionBar,
-                             HistoryGraph, nice_ceiling, win8_style)
+from .. import theme
+from ..widgets.graph import CompositionBar, HistoryGraph, nice_ceiling, win8_graph, win8_style
 from ..widgets import tux as tuxui
 from .common import LinkButton, bottom_bar
 
-GRAY = "#707070"
 POINTS = 60
 
 
@@ -29,7 +28,13 @@ def _label(text="", size=None, color=None, light=False, bold=False):
     return label
 
 
-def _mini_style(colors):
+def subtle():
+    """Grey caption colour of the performance pages."""
+    return theme.c("subtle_text")
+
+
+def _mini_style(kind):
+    colors = theme.graph_colors(kind)
     style = win8_style(*colors)
     style.rows, style.cols = 1, 1  # no inner grid lines on thumbnails
     style.grid = colors[1]
@@ -40,7 +45,7 @@ class SideItem(QtWidgets.QFrame):
     clicked = Signal(str)
     double_clicked = Signal()
 
-    def __init__(self, key, title, colors, series=1, parent=None):
+    def __init__(self, key, title, kind, series=1, parent=None):
         super().__init__(parent)
         self.key = key
         self.selected = False
@@ -49,15 +54,15 @@ class SideItem(QtWidgets.QFrame):
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(8)
-        self.graph = HistoryGraph(_mini_style(colors), POINTS, series=series)
+        self.graph = HistoryGraph(_mini_style(kind), POINTS, series=series)
         self.graph.setFixedSize(68, 46)
         self.graph.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         layout.addWidget(self.graph)
         text = QtWidgets.QVBoxLayout()
         text.setSpacing(0)
         self.title = _label(title, 13)
-        self.sub = _label("", 9, "#000000")
-        self.sub2 = _label("", 9, "#000000")
+        self.sub = _label("", 9, theme.c("text"))
+        self.sub2 = _label("", 9, theme.c("text"))
         self.sub2.hide()
         text.addStretch(1)
         text.addWidget(self.title)
@@ -73,10 +78,10 @@ class SideItem(QtWidgets.QFrame):
 
     def _apply(self):
         if self.selected:
-            self.setStyleSheet("SideItem { background: #CCE8FF; border: 1px solid #CCE8FF; }")
+            self.setStyleSheet(theme.css("SideItem { background: $selected_bg; border: 1px solid $selected_bg; }"))
         else:
-            self.setStyleSheet("SideItem { background: transparent; border: 1px solid transparent; }"
-                               "SideItem:hover { background: #E5F3FF; border: 1px solid #E5F3FF; }")
+            self.setStyleSheet(theme.css("SideItem { background: transparent; border: 1px solid transparent; }"
+                                         "SideItem:hover { background: $hover_bg; border: 1px solid $hover_bg; }"))
 
     def set_text(self, line1, line2=None):
         self.sub.setText(line1)
@@ -111,7 +116,7 @@ class StatBlock(QtWidgets.QWidget):
             for name in row:
                 cell = QtWidgets.QVBoxLayout()
                 cell.setSpacing(0)
-                cell.addWidget(_label(name, 9, GRAY))
+                cell.addWidget(_label(name, 9, subtle()))
                 value = _label("", 14)
                 cell.addWidget(value)
                 self.values[name] = value
@@ -134,7 +139,7 @@ class StatBlock(QtWidgets.QWidget):
         for name in names:
             if name in self.values:
                 continue
-            self.grid.addWidget(_label(name + ":", 9, GRAY), self.rows, 0)
+            self.grid.addWidget(_label(name + ":", 9, subtle()), self.rows, 0)
             value = _label("", 9)
             self.grid.addWidget(value, self.rows, 1)
             self.values[name] = value
@@ -159,8 +164,8 @@ class GraphFrame(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
         top = QtWidgets.QHBoxLayout()
-        self.left = _label(left, 9, GRAY)
-        self.right = _label(right, 9, GRAY)
+        self.left = _label(left, 9, subtle())
+        self.right = _label(right, 9, subtle())
         top.addWidget(self.left)
         top.addStretch(1)
         top.addWidget(self.right)
@@ -169,9 +174,9 @@ class GraphFrame(QtWidgets.QWidget):
         layout.addWidget(graph, 1)
         if footer:
             bottom = QtWidgets.QHBoxLayout()
-            bottom.addWidget(_label("60 seconds", 9, GRAY))
+            bottom.addWidget(_label("60 seconds", 9, subtle()))
             bottom.addStretch(1)
-            bottom.addWidget(_label("0", 9, GRAY))
+            bottom.addWidget(_label("0", 9, subtle()))
             layout.addLayout(bottom)
 
 
@@ -218,9 +223,10 @@ class CpuPage(DetailPage):
         self.subtitle.setText(info.model)
         self.show_kernel = False
         self.logical = False
-        self.style_ = win8_style(*WIN8_CPU, dashed_second=False)
-        self.style_.lines = [WIN8_CPU[0], "#5DA6D6"]
-        self.style_.fills = [WIN8_CPU[1], "#D7E7F3"]
+        self.style_ = win8_graph("cpu")
+        kernel_line, kernel_fill = theme.secondary_colors("cpu")
+        self.style_.lines = [self.style_.lines[0], kernel_line]
+        self.style_.fills = [self.style_.fills[0], kernel_fill]
         self.overall = HistoryGraph(self.style_, POINTS, series=2)
         self.grid_holder = QtWidgets.QWidget()
         self.grid = QtWidgets.QGridLayout(self.grid_holder)
@@ -289,11 +295,11 @@ class CpuPage(DetailPage):
 class MemoryPage(DetailPage):
     def __init__(self, parent=None):
         super().__init__("Memory", parent)
-        self.graph = HistoryGraph(win8_style(*WIN8_MEM), POINTS)
+        self.graph = HistoryGraph(win8_graph("mem"), POINTS)
         self.frame = GraphFrame("Memory usage", "", self.graph)
         self.layout_.addWidget(self.frame, 1)
-        self.layout_.addWidget(_label("Memory composition", 9, GRAY))
-        self.bar = CompositionBar(WIN8_MEM[0])
+        self.layout_.addWidget(_label("Memory composition", 9, subtle()))
+        self.bar = CompositionBar()
         self.layout_.addWidget(self.bar)
         self.stats = StatBlock([["In use", "Available"], ["Committed", "Cached"], ["Kernel slab", "Shared"]],
                                ["Swap used", "Swap total", "Buffers", "Page tables"])
@@ -325,11 +331,11 @@ class MemoryPage10(DetailPage):
     def __init__(self, hardware, parent=None):
         super().__init__("Memory", parent)
         self.hw = hardware
-        self.graph = HistoryGraph(win8_style(*WIN8_MEM), POINTS)
+        self.graph = HistoryGraph(win8_graph("mem"), POINTS)
         self.frame = GraphFrame("Memory usage", "", self.graph)
         self.layout_.addWidget(self.frame, 1)
-        self.layout_.addWidget(_label("Memory composition", 9, GRAY))
-        self.bar = CompositionBar(WIN8_MEM[0])
+        self.layout_.addWidget(_label("Memory composition", 9, subtle()))
+        self.bar = CompositionBar()
         self.layout_.addWidget(self.bar)
         self.stats = StatBlock([["In use (Compressed)", "Available"], ["Committed", "Cached"],
                                 ["Kernel slab", "Shared"]],
@@ -363,10 +369,10 @@ class DiskPage(DetailPage):
     def __init__(self, index, disk, win10=False, parent=None):
         super().__init__("Disk {} ({})".format(index, disk.name), parent)
         self.subtitle.setText(disk.model or disk.name)
-        self.active = HistoryGraph(win8_style(*WIN8_DISK), POINTS)
+        self.active = HistoryGraph(win8_graph("disk"), POINTS)
         self.layout_.addWidget(GraphFrame("Active time", "100%", self.active), 3)
-        rate_style = win8_style(*WIN8_DISK, dashed_second=True)
-        rate_style.fills = [WIN8_DISK[1], None]
+        rate_style = win8_graph("disk", dashed_second=True)
+        rate_style.fills = [rate_style.fills[0], None]
         self.rate = HistoryGraph(rate_style, POINTS, series=2)
         self.rate.autoscale = True
         self.rate_frame = GraphFrame("Disk transfer rate", "", self.rate)
@@ -399,8 +405,8 @@ class NetPage(DetailPage):
         super().__init__(net.kind, parent)
         self.wifi = win10 and net.kind == "Wi-Fi"
         self.subtitle.setText(net.name)
-        style = win8_style(*WIN8_NET, dashed_second=True)
-        style.fills = [WIN8_NET[1], None]
+        style = win8_graph("net", dashed_second=True)
+        style.fills = [style.fills[0], None]
         self.graph = HistoryGraph(style, POINTS, series=2)
         self.graph.autoscale = True
         self.frame = GraphFrame("Throughput", "", self.graph)
@@ -451,12 +457,12 @@ class GpuPage(DetailPage):
             top = QtWidgets.QHBoxLayout()
             combo = QtWidgets.QComboBox()
             combo.addItem(engine)
-            combo.setStyleSheet("QComboBox { border: none; color: #707070; background: transparent; }")
-            pct = _label("0%", 9, GRAY)
+            combo.setStyleSheet(theme.css("QComboBox { border: none; color: $subtle_text; background: transparent; }"))
+            pct = _label("0%", 9, subtle())
             top.addWidget(combo)
             top.addStretch(1)
             top.addWidget(pct)
-            graph = HistoryGraph(win8_style(*WIN8_GPU), POINTS)
+            graph = HistoryGraph(win8_graph("gpu"), POINTS)
             graph.gstyle.rows, graph.gstyle.cols = 5, 10
             graph.setMinimumHeight(60)
             cell.addLayout(top)
@@ -465,11 +471,11 @@ class GpuPage(DetailPage):
             combo.currentTextChanged.connect(lambda _text, g=graph: g.clear())
             self.engine_graphs.append((combo, pct, graph))
         self.layout_.addLayout(grid, 3)
-        self.dedicated = HistoryGraph(win8_style(*WIN8_GPU), POINTS)
+        self.dedicated = HistoryGraph(win8_graph("gpu"), POINTS)
         self.dedicated.gstyle.rows = 4
         self.dedicated_frame = GraphFrame("Dedicated GPU memory usage", "", self.dedicated, footer=False)
         self.layout_.addWidget(self.dedicated_frame, 1)
-        self.shared = HistoryGraph(win8_style(*WIN8_GPU), POINTS)
+        self.shared = HistoryGraph(win8_graph("gpu"), POINTS)
         self.shared.gstyle.rows = 4
         self.shared_frame = GraphFrame("Shared GPU memory usage", "", self.shared, footer=False)
         self.layout_.addWidget(self.shared_frame, 1)
@@ -536,7 +542,7 @@ class PerformanceTab(QtWidgets.QWidget):
         scroll.setFixedWidth(220)
         self.side_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.side_widget.customContextMenuRequested.connect(self._side_menu)
-        scroll.setStyleSheet("QScrollArea { border: none; border-right: 1px solid #E5E5E5; }")
+        scroll.setStyleSheet(theme.css("QScrollArea { border: none; border-right: 1px solid $separator; }"))
         self.scroll = scroll
         body.addWidget(scroll)
         self.pages = QtWidgets.QStackedWidget()
@@ -552,8 +558,8 @@ class PerformanceTab(QtWidgets.QWidget):
         self.items = {}
         self.page_for = {}
         self.cpu_info = sysinfo.get_cpu_info()
-        self._add("cpu", "CPU", WIN8_CPU, CpuPage(self.cpu_info, win10))
-        self._add("mem", "Memory", WIN8_MEM,
+        self._add("cpu", "CPU", "cpu", CpuPage(self.cpu_info, win10))
+        self._add("mem", "Memory", "mem",
                   MemoryPage10(sysinfo.memory_hardware()) if win10 else MemoryPage())
         self.disk_index = {}
         if tux:
@@ -580,15 +586,15 @@ class PerformanceTab(QtWidgets.QWidget):
                 page.stats.set(name, value)
         if ex.temperatures:
             if "sensors" not in self.items:
-                self._add("sensors", "Sensors", SENSOR_COLORS, SensorsPage())
+                self._add("sensors", "Sensors", "sensors", SensorsPage())
             temp = ex.cpu_temperature or 0.0
             self.items["sensors"].graph.push(temp)
             hottest = max(ex.temperatures, key=lambda t: t[2])
             self.items["sensors"].set_text("{:.0f} \u00b0C".format(temp), hottest[1])
             self.page_for["sensors"].update_tux(ex)
 
-    def _add(self, key, title, colors, page, series=1):
-        item = SideItem(key, title, colors, series)
+    def _add(self, key, title, kind, page, series=1):
+        item = SideItem(key, title, kind, series)
         item.clicked.connect(self.select)
         item.double_clicked.connect(self.toggle_summary)
         item.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -619,7 +625,7 @@ class PerformanceTab(QtWidgets.QWidget):
         self.pages.setVisible(not self.summary)
         self.bottom.setVisible(not self.summary)
         self.scroll.setStyleSheet("QScrollArea { border: none; }" if self.summary else
-                                  "QScrollArea { border: none; border-right: 1px solid #E5E5E5; }")
+                                  theme.css("QScrollArea { border: none; border-right: 1px solid $separator; }"))
         self.summary_toggled.emit(self.summary)
 
     def _side_menu(self, pos, widget=None):
@@ -663,7 +669,7 @@ class PerformanceTab(QtWidgets.QWidget):
             keys.add(key)
             if key not in self.items:
                 idx = self.disk_index.setdefault(disk.name, len(self.disk_index))
-                self._add(key, "Disk {} ({})".format(idx, disk.name), WIN8_DISK, DiskPage(idx, disk, self.win10))
+                self._add(key, "Disk {} ({})".format(idx, disk.name), "disk", DiskPage(idx, disk, self.win10))
             self.items[key].graph.push(disk.active)
             if self.win10 and disk.kind:
                 self.items[key].set_text(disk.kind, "{:.0f}%".format(disk.active))
@@ -676,7 +682,7 @@ class PerformanceTab(QtWidgets.QWidget):
             key = "net:" + net.name
             keys.add(key)
             if key not in self.items:
-                item = self._add(key, net.kind, WIN8_NET, NetPage(net, self.win10), series=2)
+                item = self._add(key, net.kind, "net", NetPage(net, self.win10), series=2)
                 item.graph.autoscale = True
             item = self.items[key]
             item.graph.push(net.sent_bps * 8, net.recv_bps * 8)
@@ -689,7 +695,7 @@ class PerformanceTab(QtWidgets.QWidget):
                 key = "gpu:{}".format(gpu.index)
                 keys.add(key)
                 if key not in self.items:
-                    self._add(key, gpu.title, WIN8_GPU, GpuPage(gpu))
+                    self._add(key, gpu.title, "gpu", GpuPage(gpu))
                 self.items[key].graph.push(gpu.utilization)
                 self.items[key].set_text(gpu.name, "{:.0f}%".format(gpu.utilization))
                 self.page_for[key].update_snapshot(gpu)
@@ -701,7 +707,6 @@ class PerformanceTab(QtWidgets.QWidget):
             self._remove(key)
 
 
-SENSOR_COLORS = ("#C42B1C", "#FCEDEB", "#F4D6D2")
 
 
 class SensorsPage(DetailPage):
@@ -709,7 +714,7 @@ class SensorsPage(DetailPage):
 
     def __init__(self, parent=None):
         super().__init__("Sensors", parent)
-        self.graph = HistoryGraph(win8_style(*SENSOR_COLORS), POINTS)
+        self.graph = HistoryGraph(win8_graph("sensors"), POINTS)
         self.frame = GraphFrame("CPU temperature over 60 seconds", "100 \u00b0C", self.graph)
         self.layout_.addWidget(self.frame, 1)
         self.stats = StatBlock([["CPU temperature", "Hottest sensor"], ["Sensors", "Fans"]], [])
@@ -738,6 +743,6 @@ class SensorsPage(DetailPage):
 def _separator():
     line = QtWidgets.QFrame()
     line.setFrameShape(QtWidgets.QFrame.Shape.VLine)
-    line.setStyleSheet("color: #C0C0C0;")
+    line.setStyleSheet("color: {};".format(theme.c("vline")))
     line.setFixedHeight(14)
     return line

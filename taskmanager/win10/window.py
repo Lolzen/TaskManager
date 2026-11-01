@@ -12,14 +12,14 @@ from ..win8.window import Win8Window
 
 # Windows 10 kept the Windows 8 design but switched to its flatter controls.
 STYLE = WIN8_STYLE + """
-QPushButton { background: #E1E1E1; border: 1px solid #ADADAD; padding: 3px 16px; }
-QPushButton:hover { background: #E5F1FB; border-color: #0078D7; }
-QPushButton:pressed { background: #CCE4F7; border-color: #005499; }
-QPushButton:disabled { background: #CCCCCC; border-color: #BFBFBF; color: #838383; }
-QTabBar::tab:hover:!selected { background: #E5F3FF; border-color: #E5F3FF; }
-QMenu { background: #F2F2F2; border: 1px solid #CCCCCC; }
+QPushButton { background: $w10_btn; border: 1px solid $w10_btn_border; padding: 3px 16px; }
+QPushButton:hover { background: $w10_btn_hover; border-color: $w10_btn_hover_border; }
+QPushButton:pressed { background: $w10_btn_pressed; border-color: $w10_btn_pressed_border; }
+QPushButton:disabled { background: $w10_btn_disabled; border-color: $w10_btn_disabled_border; color: $disabled_text; }
+QTabBar::tab:hover:!selected { background: $hover_bg; border-color: $hover_bg; }
+QMenu { background: $w10_menu_bg; border: 1px solid $w10_menu_border; color: $text; }
 QMenu::item { padding: 4px 28px 4px 24px; }
-QMenu::item:selected { background: #91C9F7; color: #000000; }
+QMenu::item:selected { background: $w10_menu_selected; color: $text; }
 """
 
 

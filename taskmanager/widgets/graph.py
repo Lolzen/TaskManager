@@ -8,6 +8,7 @@ gauge; ``CompositionBar`` is the Windows 8 *Memory composition* bar.
 from collections import deque
 from dataclasses import dataclass, field
 
+from .. import theme
 from ..qt import QtCore, QtGui, QtWidgets, Qt
 
 
@@ -39,18 +40,16 @@ WIN7_KERNEL_STYLE = GraphStyle(lines=["#00FF00", "#FF0000"], fills=[None, None],
 
 def win8_style(line, fill, grid, dashed_second=False):
     return GraphStyle(
-        background="#FFFFFF", grid=grid, border=line,
+        background=theme.c("graph_bg"), grid=grid, border=line,
         lines=[line, line], fills=[fill, None], dashed=[False, dashed_second],
         grid_px=0, rows=10, cols=20, line_width=1.0,
     )
 
 
-# Colours of the Windows 8 performance tab
-WIN8_CPU = ("#117DBB", "#F1F6FA", "#D9EAF4")
-WIN8_MEM = ("#8B12AE", "#F4F2F4", "#ECDEF0")
-WIN8_DISK = ("#4DA60C", "#EFF7E9", "#DCEDD0")
-WIN8_NET = ("#A74F01", "#FCF3EB", "#F2DECA")
-WIN8_GPU = ("#117DBB", "#F1F6FA", "#D9EAF4")  # Windows 10 GPU pages share the CPU blue
+
+def win8_graph(kind, dashed_second=False):
+    """Style of a Windows 8/10 performance graph in the current colour scheme."""
+    return win8_style(*theme.graph_colors(kind), dashed_second=dashed_second)
 
 
 class HistoryGraph(QtWidgets.QWidget):
@@ -226,9 +225,9 @@ class LedMeter(QtWidgets.QWidget):
 class CompositionBar(QtWidgets.QWidget):
     """Windows 8 *Memory composition*: In use | Modified | Standby | Free."""
 
-    def __init__(self, color="#8B12AE", parent=None):
+    def __init__(self, color=None, parent=None):
         super().__init__(parent)
-        self.color = qc(color)
+        self.color = qc(color or theme.graph_colors("mem")[0])
         self.parts = [0, 0, 0, 0]
         self.total = 1
         self.setFixedHeight(46)
@@ -245,8 +244,9 @@ class CompositionBar(QtWidgets.QWidget):
     def paintEvent(self, _event):
         p = QtGui.QPainter(self)
         rect = self.rect().adjusted(0, 0, -1, -1)
-        p.fillRect(rect, Qt.GlobalColor.white)
-        fills = [qc(self.color, 110), qc(self.color, 60), qc(self.color, 25), qc("#FFFFFF")]
+        background = theme.qcolor("graph_bg")
+        p.fillRect(rect, background)
+        fills = [qc(self.color, 110), qc(self.color, 60), qc(self.color, 25), background]
         x = float(rect.left())
         for idx, part in enumerate(self.parts):
             width = rect.width() * part / self.total

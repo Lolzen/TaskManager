@@ -13,6 +13,11 @@ layouts:
 * **Windows 10**: the Windows 8 layout plus everything Windows 10 added,
   including GPU monitoring and the Power usage columns (listed below).
 
+**Dark mode** works with every layout: *View > Theme* offers Light, Dark, or
+System default (follow the desktop, the default), and `--theme dark` sets it
+from the command line. Windows 7, 8 and 10 never had a dark Task Manager, so
+the dark colours follow Windows 11's.
+
 **Tux mode** can be switched on for any of the three layouts. It keeps the
 layout and adds the extra information Linux provides (described below).
 
@@ -24,6 +29,8 @@ the last layout you used.
 | ![Windows 7 performance tab](docs/win7-performance.png) | ![Windows 8 performance tab](docs/win8-performance.png) |
 
 ![Windows 10 GPU page](docs/win10-gpu.png)
+
+![Windows 10 layout in dark mode](docs/win10-dark.png)
 
 *The Windows 10 GPU page. The screenshot machine has no GPU, so it was
 taken with simulated GPU data.*
@@ -42,6 +49,10 @@ You can also switch from *View > Layout* in any layout.
 
 ```bash
 python3 -m taskmanager --win10 --tux   # any layout, plus Tux mode
+```
+
+```bash
+python3 -m taskmanager --theme dark    # or light, or system (follow the desktop)
 ```
 
 Tux mode can also be toggled with *View > Tux mode*. Both the layout and Tux

@@ -3,6 +3,7 @@
 import datetime
 import os
 
+from .. import theme
 from ..backend import actions, startup, sysinfo
 from ..backend.apps import exec_program
 from ..backend.formatting import fmt_bytes, fmt_cpu_time
@@ -98,7 +99,7 @@ class StartupTab(QtWidgets.QWidget):
             top.setContentsMargins(10, 4, 12, 4)
             top.addStretch(1)
             self.bios = QtWidgets.QLabel()
-            self.bios.setStyleSheet("color: #707070;")
+            self.bios.setStyleSheet("color: {};".format(theme.c("subtle_text")))
             top.addWidget(self.bios)
             layout.addLayout(top)
             run_async(sysinfo.last_bios_time, self._bios_loaded, self)

@@ -1,5 +1,6 @@
 """Windows 8 Task Manager layout."""
 
+from .. import theme
 from ..backend import services as svc_backend
 from ..core import run_async
 from ..qt import QtCore, QtGui, QtWidgets
@@ -24,7 +25,7 @@ class Win8Window(QtWidgets.QMainWindow):
         self.setObjectName("win8")
         self.tux = controller.tux
         self.setWindowTitle(tux_title("Task Manager") if self.tux else "Task Manager")
-        self.setStyleSheet(self.STYLE)
+        self.setStyleSheet(theme.css(self.STYLE))
         self.settings = QtCore.QSettings()
         key = self.LAYOUT
 

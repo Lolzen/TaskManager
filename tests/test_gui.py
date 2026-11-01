@@ -7,7 +7,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 qt = pytest.importorskip("taskmanager.qt")
-from taskmanager.qt import QtCore, QtWidgets  # noqa: E402
+from taskmanager.qt import QtCore, QtGui, QtWidgets  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -218,3 +218,35 @@ def test_exit_while_background_task_runs():
     proc = subprocess.run([sys.executable, "-c", script], env=env, capture_output=True, text=True,
                           timeout=60, cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     assert proc.returncode == 0, proc.stderr[-2000:]
+
+
+@pytest.mark.parametrize("layout", ["win7", "win8", "win10"])
+def test_dark_mode_renders_and_switches(qapp, layout):
+    from taskmanager import theme
+    from taskmanager.app import Controller
+    controller = Controller(qapp, layout, tux=True, theme_pref="dark")
+    controller.set_speed("High")
+    try:
+        assert theme.is_dark()
+        assert qapp.palette().color(QtGui.QPalette.ColorRole.Window).lightness() < 60
+        _wait_for_snapshot(qapp, controller, count=2)
+        window = controller.window
+        assert window.property("theme") == "dark"
+        for index in range(window.tabs.count()):
+            window.tabs.setCurrentIndex(index)
+            window.on_snapshot(controller.sampler.last)
+            qapp.processEvents()
+            image = window.grab().toImage()
+            assert not image.isNull()
+        # the window body really is dark (sampled away from text)
+        centre = window.grab().toImage().pixelColor(window.width() // 2, window.height() - 40)
+        assert centre.lightness() < 90, centre.name()
+        controller.set_theme("light")
+        assert not theme.is_dark() and controller.window.property("theme") == "light"
+        assert controller.window.LAYOUT == layout
+        assert QtCore.QSettings().value("theme") == "light"
+    finally:
+        controller.window._switching = True
+        controller.window.close()
+        controller._shutdown()
+        theme.set_current("light")
