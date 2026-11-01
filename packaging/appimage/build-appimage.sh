@@ -26,7 +26,7 @@ BUNDLED_LIBS="libxcb-cursor.so.0 libxcb-icccm.so.4 libxcb-image.so.0 libxcb-keys
 if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
-  apt-get install -y -qq --no-install-recommends ca-certificates curl python3 file desktop-file-utils \
+  apt-get install -y -qq --no-install-recommends ca-certificates curl python3 file desktop-file-utils librsvg2-bin \
       libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxkbcommon-x11-0 >/dev/null
 fi
 
@@ -100,8 +100,9 @@ done
 echo "== AppDir metadata"
 install -m 755 "$SRC/packaging/appimage/AppRun" "$APPDIR/AppRun"
 install -m 644 "$SRC/data/taskmanager.desktop" "$APPDIR/taskmanager.desktop"
-install -m 644 "$SRC/data/taskmanager.svg" "$APPDIR/taskmanager.svg"
-ln -sf taskmanager.svg "$APPDIR/.DirIcon"
+# appimagetool wants a PNG icon (it derives .DirIcon from it); keep the SVG for desktop integration
+rsvg-convert -w 256 -h 256 "$SRC/data/taskmanager.svg" -o "$APPDIR/taskmanager.png"
+install -Dm644 "$APPDIR/taskmanager.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/taskmanager.png"
 install -Dm644 "$SRC/data/taskmanager.desktop" "$APPDIR/usr/share/applications/taskmanager.desktop"
 install -Dm644 "$SRC/data/taskmanager.svg" "$APPDIR/usr/share/icons/hicolor/scalable/apps/taskmanager.svg"
 install -Dm644 "$SRC/LICENSE" "$APPDIR/usr/share/licenses/taskmanager/LICENSE"
