@@ -20,12 +20,21 @@ The AppImage contains:
   [python-build-standalone](https://github.com/astral-sh/python-build-standalone),
   checked against its published SHA-256;
 * psutil and PySide6 from PyPI;
-* the X11 helper libraries Qt's xcb plugin needs but minimal systems lack
-  (`libxcb-cursor` and friends).
+* the X11 helper libraries Qt's xcb plugin links (`libxcb-cursor`,
+  `libxcb-util`, `libxkbcommon-x11` and the rest), found with `ldd` at build
+  time. They are only fallbacks: `AppRun` uses each one only when the host
+  lacks it. A bundled copy next to the host's newer relatives can crash Qt
+  (the bundled `libxkbcommon-x11` did on Arch, Fedora and Void).
+  `libxkbcommon-x11` only ever comes together with its matching
+  `libxkbcommon`.
 
-`AppRun` starts the app with `python3 -I`, so the host's `PYTHONPATH` and
-site-packages cannot interfere. Programs Task Manager starts for you get the
-original `LD_LIBRARY_PATH` back.
+`AppRun` starts the app with `python3 -I -X faulthandler`, so the host's
+`PYTHONPATH` and site-packages cannot interfere, and a native crash prints
+where it happened. It drops conda environments' `lib` directories from
+`LD_LIBRARY_PATH` and unsets `QT_PLUGIN_PATH` and the QML paths, so the
+bundled Qt never loads another Qt's libraries or plugins. Programs Task
+Manager starts for you get the original values back. Set
+`TASKMANAGER_DEBUG=1` to have Qt log which plugins it loads.
 
 * **Requirements:** PySide6's wheels need glibc 2.34+. That covers Ubuntu
   22.04, Debian 12, Fedora 35, Arch, Void (glibc) and newer, but not musl.
@@ -37,11 +46,16 @@ original `LD_LIBRARY_PATH` back.
   packages from PyPI.
 * **Overrides:** `PYTHON_URL`/`PYTHON_SHA256`, `PYTHON_SERIES`,
   `APPIMAGETOOL_URL` and `RUNTIME_FILE` pin or replace those downloads.
-* **Testing:** `appimage/test-appimage.sh <file>` tests a built AppImage
-  inside a container of any supported distribution. It runs `--version`,
-  then `smoke_test.py` with the bundled interpreter (every layout, Tux mode,
-  light and dark), then the real launcher. CI does this on Ubuntu 22.04 and
-  24.04, Debian 12, Fedora, Arch and Void.
+* **Testing:** `appimage/test-appimage.sh <AppImage or AppDir>` runs inside a
+  container of any supported distribution:
+  * `--version`;
+  * `smoke_test.py` with the bundled interpreter (every layout, Tux mode,
+    light and dark);
+  * the real launcher on an X server (Xvfb), twice: first with only the basic
+    desktop libraries, so the bundled fallbacks are used, then with the
+    distribution's own X11 libraries installed.
+
+  CI does this on Ubuntu 22.04 and 24.04, Debian 12, Fedora, Arch and Void.
 
 Each recipe installs:
 

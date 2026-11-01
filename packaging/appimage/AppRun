@@ -2,11 +2,60 @@
 # Entry point of the Task Manager AppImage.
 HERE="$(dirname "$(readlink -f "$0")")"
 
-# Qt's xcb plugin needs a few X11 helper libraries that minimal systems lack;
-# they are bundled in usr/lib. Remember the caller's value so programs Task
-# Manager starts for the user (Run new task, ...) get it back.
-export TASKMANAGER_APPIMAGE_LD_LIBRARY_PATH="${LD_LIBRARY_PATH-}"
-export LD_LIBRARY_PATH="$HERE/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# The bundled Qt must only see its own libraries and plugins. Variables that
+# would point it elsewhere are saved (programs Task Manager starts for the user
+# get them back, see taskmanager.backend.actions.user_env) and then adjusted.
+export TASKMANAGER_APPIMAGE=1
+for var in LD_LIBRARY_PATH QT_PLUGIN_PATH QT_QPA_PLATFORM_PLUGIN_PATH QML2_IMPORT_PATH QML_IMPORT_PATH; do
+  if eval "[ -n \"\${$var+set}\" ]"; then
+    eval "export TASKMANAGER_APPIMAGE_SAVED_$var=\"\$$var\""
+  fi
+done
+unset QT_PLUGIN_PATH QT_QPA_PLATFORM_PLUGIN_PATH QML2_IMPORT_PATH QML_IMPORT_PATH
+
+# usr/lib/fallback/<soname>/ holds X11 helper libraries that Qt's xcb plugin
+# needs. Use one only when the host lacks that library: a bundled copy can
+# clash with the host's newer relatives (libxkbcommon-x11 from an older
+# libxkbcommon crashes Qt on Arch, Fedora and Void). Companions that must match
+# travel in the same directory (libxkbcommon-x11 brings its libxkbcommon).
+case "$(uname -m)" in
+  x86_64) ldarch="x86-64" ;;
+  aarch64) ldarch="AArch64" ;;
+  *) ldarch="" ;;
+esac
+ldcache=$( (ldconfig -p || /sbin/ldconfig -p) 2>/dev/null )
+host_has() {
+  if [ -n "$ldcache" ]; then
+    printf '%s\n' "$ldcache" | grep -q "^[[:space:]]*$1 (libc6,$ldarch"
+    return
+  fi
+  for d in /lib64 /usr/lib64 /lib /usr/lib "/lib/$(uname -m)-linux-gnu" "/usr/lib/$(uname -m)-linux-gnu"; do
+    [ -e "$d/$1" ] && return 0
+  done
+  return 1
+}
+libs="$HERE/usr/lib"
+for dir in "$HERE"/usr/lib/fallback/*/; do
+  [ -d "$dir" ] || continue
+  soname=$(basename "$dir")
+  host_has "$soname" || libs="$libs:${dir%/}"
+done
+
+# Keep the caller's library path (GPU drivers can live there) but drop conda
+# environments' lib directories: their own Qt, glib and fontconfig builds
+# do not belong in a foreign Qt.
+old_ifs=$IFS
+IFS=:
+for dir in ${LD_LIBRARY_PATH-}; do
+  [ -n "$dir" ] || continue
+  [ -d "$dir/../conda-meta" ] && continue
+  libs="$libs:$dir"
+done
+IFS=$old_ifs
+export LD_LIBRARY_PATH="$libs"
+
+[ -n "${TASKMANAGER_DEBUG-}" ] && export QT_DEBUG_PLUGINS=1
 
 # -I: ignore PYTHONPATH, PYTHONHOME and user site-packages of the host
-exec "$HERE/usr/python/bin/python3" -I -m taskmanager "$@"
+# -X faulthandler: print where it happened if native code crashes
+exec "$HERE/usr/python/bin/python3" -I -X faulthandler -m taskmanager "$@"

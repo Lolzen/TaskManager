@@ -20,14 +20,16 @@ ARCH=${ARCH:-$(uname -m)}
 PYTHON_SERIES=${PYTHON_SERIES:-3.12}
 WORK=${WORK:-/tmp/appimage-build}
 APPIMAGETOOL_URL=${APPIMAGETOOL_URL:-https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$ARCH.AppImage}
-# Qt 6's xcb platform plugin links these; they are missing on many minimal installs
-BUNDLED_LIBS="libxcb-cursor.so.0 libxcb-icccm.so.4 libxcb-image.so.0 libxcb-keysyms.so.1 libxcb-render-util.so.0 libxkbcommon-x11.so.0"
 
 if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
+  # the X11 helper libraries are only installed to be bundled; the GL, font and glib ones let ldd resolve fully
   apt-get install -y -qq --no-install-recommends ca-certificates curl python3 file desktop-file-utils librsvg2-bin \
-      libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxkbcommon-x11-0 >/dev/null
+      libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxkbcommon-x11-0 \
+      libxcb-util1 libxcb-shape0 libxcb-xkb1 libxcb-render0 libxcb-randr0 libxcb-shm0 libxcb-sync1 libxcb-xfixes0 \
+      libxcb-xinerama0 libxcb-xinput0 libxcb-glx0 libx11-xcb1 libegl1 libgl1 libfontconfig1 libdbus-1-3 \
+      libglib2.0-0 >/dev/null
 fi
 
 version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' "$SRC/taskmanager/__init__.py")
@@ -86,16 +88,28 @@ rm -rf "$stdlib/test" "$stdlib/idlelib" "$stdlib/tkinter" "$stdlib/turtledemo" "
 "$PY" -m pip uninstall -y -q pip setuptools wheel 2>/dev/null || true
 "$PY" -m compileall -q -j 0 "$site/taskmanager" >/dev/null
 
-echo "== bundled libraries"
-mkdir -p "$APPDIR/usr/lib"
-for lib in $BUNDLED_LIBS; do
-  path=$(ldconfig -p | awk -v l="$lib" '$1 == l && /x86-64|aarch64|AArch64/ {print $NF; exit}')
-  if [ -n "$path" ]; then
-    cp -L "$path" "$APPDIR/usr/lib/$lib" && echo "$lib"
-  else
-    echo "warning: $lib not found, not bundled" >&2
+echo "== fallback X11 libraries"
+# Everything the xcb platform plugin links beyond libxcb itself (which must
+# match the host's libX11). AppRun uses each one only if the host lacks it.
+qt="$site/PySide6/Qt"
+needed=$(LD_LIBRARY_PATH="$qt/lib" ldd "$qt/plugins/platforms/libqxcb.so" "$qt/lib/libQt6XcbQpa.so.6" |
+         awk '$1 ~ /^libxcb-|^libxkbcommon-x11/ && $3 ~ /^\// {print $1 " " $3}' | sort -u)
+if LD_LIBRARY_PATH="$qt/lib" ldd "$qt/plugins/platforms/libqxcb.so" | grep -q "not found"; then
+  echo "error: the xcb plugin has unresolved libraries on the build host" >&2
+  LD_LIBRARY_PATH="$qt/lib" ldd "$qt/plugins/platforms/libqxcb.so" | grep "not found" >&2
+  exit 1
+fi
+echo "$needed" | while read -r soname path; do
+  dir="$APPDIR/usr/lib/fallback/$soname"
+  mkdir -p "$dir"
+  cp -L "$path" "$dir/$soname"
+  if [ "$soname" = libxkbcommon-x11.so.0 ]; then
+    # libxkbcommon-x11 calls libxkbcommon internals: only ever use them as a pair
+    cp -L "$(ldconfig -p | awk '$1 == "libxkbcommon.so.0" && /x86-64|AArch64/ {print $NF; exit}')" "$dir/libxkbcommon.so.0"
   fi
+  echo "$soname"
 done
+mkdir -p "$APPDIR/usr/lib"
 
 echo "== AppDir metadata"
 install -m 755 "$SRC/packaging/appimage/AppRun" "$APPDIR/AppRun"

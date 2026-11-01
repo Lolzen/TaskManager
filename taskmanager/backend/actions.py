@@ -76,20 +76,26 @@ def set_affinity(pid, cpus):
     psutil.Process(pid).cpu_affinity(list(cpus))
 
 
+APPIMAGE_SAVED_VARS = ("LD_LIBRARY_PATH", "QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH",
+                       "QML2_IMPORT_PATH", "QML_IMPORT_PATH")
+
+
 def user_env():
     """Environment for programs started on the user's behalf.
 
-    The AppImage's launcher puts its bundled libraries on LD_LIBRARY_PATH
-    and remembers the original value; programs we start for the user must
-    not inherit our copies.
+    The AppImage's launcher points the library and Qt plugin paths at its own
+    bundle and saves the caller's values (see packaging/appimage/AppRun);
+    programs we start for the user get those values back.
     """
     env = dict(os.environ)
-    if "TASKMANAGER_APPIMAGE_LD_LIBRARY_PATH" in env:
-        original = env.pop("TASKMANAGER_APPIMAGE_LD_LIBRARY_PATH")
-        if original:
-            env["LD_LIBRARY_PATH"] = original
+    if env.pop("TASKMANAGER_APPIMAGE", None) is None:
+        return env
+    for var in APPIMAGE_SAVED_VARS:
+        saved = env.pop("TASKMANAGER_APPIMAGE_SAVED_" + var, None)
+        if saved is None:
+            env.pop(var, None)
         else:
-            env.pop("LD_LIBRARY_PATH", None)
+            env[var] = saved
     return env
 
 

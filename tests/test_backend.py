@@ -240,13 +240,23 @@ def test_startup_type(tmp_path):
     assert items["b.desktop"].source == "Autostart (user)"
 
 
-def test_user_env_restores_the_original_library_path(monkeypatch):
+def test_user_env_restores_what_the_appimage_launcher_changed(monkeypatch):
     from taskmanager.backend import actions
+    monkeypatch.setenv("TASKMANAGER_APPIMAGE", "1")
     monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/.mount_TaskMa/usr/lib:/opt/lib")
-    monkeypatch.setenv("TASKMANAGER_APPIMAGE_LD_LIBRARY_PATH", "/opt/lib")
+    monkeypatch.setenv("TASKMANAGER_APPIMAGE_SAVED_LD_LIBRARY_PATH", "/home/u/miniconda3/lib:/opt/lib")
+    monkeypatch.setenv("TASKMANAGER_APPIMAGE_SAVED_QT_PLUGIN_PATH", "/usr/lib/qt6/plugins")
+    monkeypatch.delenv("QT_PLUGIN_PATH", raising=False)
+    monkeypatch.setenv("QML2_IMPORT_PATH", "/should/not/leak")  # set inside, never saved -> removed
     env = actions.user_env()
-    assert env["LD_LIBRARY_PATH"] == "/opt/lib" and "TASKMANAGER_APPIMAGE_LD_LIBRARY_PATH" not in env
-    monkeypatch.setenv("TASKMANAGER_APPIMAGE_LD_LIBRARY_PATH", "")
-    assert "LD_LIBRARY_PATH" not in actions.user_env()
-    monkeypatch.delenv("TASKMANAGER_APPIMAGE_LD_LIBRARY_PATH")
-    assert actions.user_env()["LD_LIBRARY_PATH"] == "/tmp/.mount_TaskMa/usr/lib:/opt/lib"
+    assert env["LD_LIBRARY_PATH"] == "/home/u/miniconda3/lib:/opt/lib"
+    assert env["QT_PLUGIN_PATH"] == "/usr/lib/qt6/plugins"
+    assert "QML2_IMPORT_PATH" not in env
+    assert not [k for k in env if k.startswith("TASKMANAGER_APPIMAGE")]
+
+
+def test_user_env_outside_the_appimage_is_untouched(monkeypatch):
+    from taskmanager.backend import actions
+    monkeypatch.delenv("TASKMANAGER_APPIMAGE", raising=False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/opt/lib")
+    assert actions.user_env()["LD_LIBRARY_PATH"] == "/opt/lib"
