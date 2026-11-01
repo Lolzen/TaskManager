@@ -16,6 +16,7 @@ make_check_pre="env QT_QPA_PLATFORM=offscreen"
 
 post_install() {
 	vinstall data/taskmanager.desktop 644 usr/share/applications
+	vinstall data/taskmanager.svg 644 usr/share/icons/hicolor/scalable/apps
 	vman data/taskmanager.1
 	vlicense LICENSE
 }

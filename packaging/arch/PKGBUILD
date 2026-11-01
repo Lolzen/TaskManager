@@ -33,5 +33,6 @@ package() {
   python -m installer --destdir="$pkgdir" dist/*.whl
   install -Dm644 data/taskmanager.desktop "$pkgdir/usr/share/applications/taskmanager.desktop"
   install -Dm644 data/taskmanager.1 "$pkgdir/usr/share/man/man1/taskmanager.1"
+  install -Dm644 data/taskmanager.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/taskmanager.svg"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

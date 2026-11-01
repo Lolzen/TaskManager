@@ -70,6 +70,24 @@ Requirements: Python 3.9+, [psutil](https://github.com/giampaolo/psutil), and
 PySide6 (or PyQt6, which is used automatically if PySide6 is missing; set
 `TASKMANAGER_QT=pyqt6` or `pyside6` to choose).
 
+### AppImage
+
+A single-file **AppImage** bundles its own Python, PySide6 and psutil, and
+runs on any glibc 2.34+ distribution (Ubuntu 22.04, Debian 12, Fedora 35,
+Arch, Void and newer):
+
+```bash
+chmod +x TaskManager-1.0.0-x86_64.AppImage
+./TaskManager-1.0.0-x86_64.AppImage --win10 --theme dark
+```
+
+CI builds it on every push and attaches it to tagged releases. To build it
+yourself:
+
+```bash
+docker run --rm -v "$PWD":/src -e SRC=/src ubuntu:22.04 /src/packaging/appimage/build-appimage.sh
+```
+
 ### Distribution packages
 
 There are tested package recipes for **Ubuntu 24.04+**, **Arch Linux** and

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="titlebar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2E9BE0"/>
+      <stop offset="1" stop-color="#117DBB"/>
+    </linearGradient>
+    <clipPath id="screen">
+      <rect x="92" y="78" width="136" height="146"/>
+    </clipPath>
+  </defs>
+  <!-- window -->
+  <rect x="12" y="20" width="232" height="216" rx="18" fill="#2B2B2B"/>
+  <path d="M30 20h196a18 18 0 0 1 18 18v26H12V38a18 18 0 0 1 18-18z" fill="url(#titlebar)"/>
+  <circle cx="214" cy="42" r="7" fill="#FFFFFF" fill-opacity="0.85"/>
+  <circle cx="190" cy="42" r="7" fill="#FFFFFF" fill-opacity="0.55"/>
+  <!-- LED meter -->
+  <rect x="28" y="78" width="52" height="146" fill="#000000"/>
+  <g fill="#0B6B35">
+    <rect x="34" y="84" width="18" height="6"/><rect x="56" y="84" width="18" height="6"/>
+    <rect x="34" y="96" width="18" height="6"/><rect x="56" y="96" width="18" height="6"/>
+    <rect x="34" y="108" width="18" height="6"/><rect x="56" y="108" width="18" height="6"/>
+    <rect x="34" y="120" width="18" height="6"/><rect x="56" y="120" width="18" height="6"/>
+  </g>
+  <g fill="#3CE070">
+    <rect x="34" y="132" width="18" height="6"/><rect x="56" y="132" width="18" height="6"/>
+    <rect x="34" y="144" width="18" height="6"/><rect x="56" y="144" width="18" height="6"/>
+    <rect x="34" y="156" width="18" height="6"/><rect x="56" y="156" width="18" height="6"/>
+    <rect x="34" y="168" width="18" height="6"/><rect x="56" y="168" width="18" height="6"/>
+    <rect x="34" y="180" width="18" height="6"/><rect x="56" y="180" width="18" height="6"/>
+    <rect x="34" y="192" width="18" height="6"/><rect x="56" y="192" width="18" height="6"/>
+    <rect x="34" y="204" width="18" height="6"/><rect x="56" y="204" width="18" height="6"/>
+  </g>
+  <!-- history graph -->
+  <rect x="92" y="78" width="136" height="146" fill="#000000"/>
+  <g stroke="#0B6B35" stroke-width="2" clip-path="url(#screen)">
+    <path d="M92 102.5h136M92 126.5h136M92 150.5h136M92 174.5h136M92 198.5h136"/>
+    <path d="M116.5 78v146M140.5 78v146M164.5 78v146M188.5 78v146M212.5 78v146"/>
+  </g>
+  <polyline clip-path="url(#screen)" fill="none" stroke="#3CE070" stroke-width="6" stroke-linejoin="round"
+            stroke-linecap="round" points="92,196 108,188 122,198 136,150 150,166 164,120 178,138 192,100 206,124 228,96"/>
+</svg>

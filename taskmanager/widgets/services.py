@@ -4,6 +4,7 @@ import shutil
 import subprocess
 
 from ..backend import services as svc_backend
+from ..backend.actions import user_env
 from ..core import bulk_update, run_async
 from ..qt import QtCore, QtWidgets, Qt, Signal
 from .dialogs import show_error
@@ -150,7 +151,7 @@ class ServicesPanel(QtWidgets.QWidget):
     def _open_tool(self, *_args):
         for cmd in SERVICE_TOOLS:
             if shutil.which(cmd[0]):
-                subprocess.Popen(cmd, start_new_session=True)
+                subprocess.Popen(cmd, start_new_session=True, env=user_env())
                 return
         self.refresh()
 

@@ -238,3 +238,15 @@ def test_startup_type(tmp_path):
     items = {i.id: i for i in startup.list_xdg([str(user), str(system)])}
     assert items["a.desktop"].source == "Autostart (system)"
     assert items["b.desktop"].source == "Autostart (user)"
+
+
+def test_user_env_restores_the_original_library_path(monkeypatch):
+    from taskmanager.backend import actions
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/.mount_TaskMa/usr/lib:/opt/lib")
+    monkeypatch.setenv("TASKMANAGER_APPIMAGE_LD_LIBRARY_PATH", "/opt/lib")
+    env = actions.user_env()
+    assert env["LD_LIBRARY_PATH"] == "/opt/lib" and "TASKMANAGER_APPIMAGE_LD_LIBRARY_PATH" not in env
+    monkeypatch.setenv("TASKMANAGER_APPIMAGE_LD_LIBRARY_PATH", "")
+    assert "LD_LIBRARY_PATH" not in actions.user_env()
+    monkeypatch.delenv("TASKMANAGER_APPIMAGE_LD_LIBRARY_PATH")
+    assert actions.user_env()["LD_LIBRARY_PATH"] == "/tmp/.mount_TaskMa/usr/lib:/opt/lib"

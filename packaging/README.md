@@ -7,7 +7,41 @@
 | Void Linux | `void/srcpkgs/taskmanager/template` (xbps-src) | `python3-pyside6-widgets` | built with `xbps-src -Q` (tests run during the build), installed, `xlint` |
 
 Ubuntu 22.04 and older are not supported. They package no Qt 6 bindings for
-Python (neither PyQt6 nor PySide6).
+Python (neither PyQt6 nor PySide6). The AppImage below covers them.
+
+Each recipe also installs the icon (`taskmanager.svg`, hicolor theme).
+
+## AppImage
+
+`appimage/build-appimage.sh` builds `dist/TaskManager-<version>-<arch>.AppImage`.
+The AppImage contains:
+
+* a relocatable CPython from
+  [python-build-standalone](https://github.com/astral-sh/python-build-standalone),
+  checked against its published SHA-256;
+* psutil and PySide6 from PyPI;
+* the X11 helper libraries Qt's xcb plugin needs but minimal systems lack
+  (`libxcb-cursor` and friends).
+
+`AppRun` starts the app with `python3 -I`, so the host's `PYTHONPATH` and
+site-packages cannot interfere. Programs Task Manager starts for you get the
+original `LD_LIBRARY_PATH` back.
+
+* **Requirements:** PySide6's wheels need glibc 2.34+. That covers Ubuntu
+  22.04, Debian 12, Fedora 35, Arch, Void (glibc) and newer, but not musl.
+  The usual desktop libraries must be present: EGL/GL, fontconfig,
+  xkbcommon, D-Bus, GLib.
+* **How to build:** run the script as root in an `ubuntu:22.04` container
+  (see the main README). It downloads python-build-standalone,
+  `appimagetool` and the AppImage runtime from GitHub, and the Python
+  packages from PyPI.
+* **Overrides:** `PYTHON_URL`/`PYTHON_SHA256`, `PYTHON_SERIES`,
+  `APPIMAGETOOL_URL` and `RUNTIME_FILE` pin or replace those downloads.
+* **Testing:** `appimage/test-appimage.sh <file>` tests a built AppImage
+  inside a container of any supported distribution. It runs `--version`,
+  then `smoke_test.py` with the bundled interpreter (every layout, Tux mode,
+  light and dark), then the real launcher. CI does this on Ubuntu 22.04 and
+  24.04, Debian 12, Fedora, Arch and Void.
 
 Each recipe installs:
 
@@ -36,8 +70,10 @@ docker run --rm --privileged -v /dev:/dev -v "$PWD":/src -e SRC=/src ghcr.io/voi
 
 Void's `xbps-src` needs `--privileged` for its build chroot. Behind a
 TLS-intercepting proxy, pass `-e EXTRA_CA_CERT=/path/in/container.crt` so the
-chroot trusts the proxy too. The same three jobs run in GitHub Actions
-(`.github/workflows/ci.yml`) on every push and pull request.
+chroot trusts the proxy too. The same three jobs, plus the AppImage build and its tests, run in GitHub
+Actions (`.github/workflows/ci.yml`) on every push and pull request. When a
+`v*` tag is pushed, the `.deb`, Arch package, Void package and AppImage are
+attached to the GitHub release.
 
 Installing the result:
 

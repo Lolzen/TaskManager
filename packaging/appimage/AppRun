@@ -1,0 +1,12 @@
+#!/bin/sh
+# Entry point of the Task Manager AppImage.
+HERE="$(dirname "$(readlink -f "$0")")"
+
+# Qt's xcb plugin needs a few X11 helper libraries that minimal systems lack;
+# they are bundled in usr/lib. Remember the caller's value so programs Task
+# Manager starts for the user (Run new task, ...) get it back.
+export TASKMANAGER_APPIMAGE_LD_LIBRARY_PATH="${LD_LIBRARY_PATH-}"
+export LD_LIBRARY_PATH="$HERE/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+# -I: ignore PYTHONPATH, PYTHONHOME and user site-packages of the host
+exec "$HERE/usr/python/bin/python3" -I -m taskmanager "$@"

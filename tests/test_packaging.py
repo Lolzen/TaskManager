@@ -32,7 +32,9 @@ def test_recipes_install_the_same_files():
     for recipe in (read("packaging", "arch", "PKGBUILD"),
                    read("packaging", "void", "srcpkgs", "taskmanager", "template")):
         assert "taskmanager.desktop" in recipe and "taskmanager.1" in recipe and "LICENSE" in recipe
-    assert "taskmanager.desktop" in read("packaging", "debian", "taskmanager.install")
+        assert "taskmanager.svg" in recipe
+    install = read("packaging", "debian", "taskmanager.install")
+    assert "taskmanager.desktop" in install and "taskmanager.svg" in install
     assert "taskmanager.1" in read("packaging", "debian", "taskmanager.manpages")
 
 
