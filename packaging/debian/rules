@@ -1,0 +1,17 @@
+#!/usr/bin/make -f
+
+export PYBUILD_NAME=taskmanager
+# the test suite lives outside the package; run it against the built copy
+export PYBUILD_BEFORE_TEST=cp -r {dir}/tests {build_dir}
+export PYBUILD_AFTER_TEST=rm -rf {build_dir}/tests
+export PYBUILD_TEST_ARGS=-q
+export QT_QPA_PLATFORM=offscreen
+export TASKMANAGER_QT=pyqt6
+
+%:
+	dh $@ --with python3 --buildsystem=pybuild
+
+# pyproject.toml names the PyPI wheel "PySide6-Essentials"; the Debian
+# dependencies on Qt bindings are spelled out in debian/control instead.
+override_dh_python3:
+	dh_python3 --no-guessing-deps

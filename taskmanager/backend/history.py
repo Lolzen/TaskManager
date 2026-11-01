@@ -54,21 +54,34 @@ class AppHistory:
         self._dirty = True
         self.save()
 
+    def entries(self, all_processes=False):
+        """App entries, or per-process-name entries for *Show history for all processes*."""
+        kind = "proc" if all_processes else "app"
+        return {k: v for k, v in self.apps.items() if v.get("kind", "app") == kind}
+
+    def _add(self, key, name, kind, cpu, read, write):
+        entry = self.apps.setdefault(key, {"name": name, "kind": kind, "cpu": 0.0, "read": 0, "write": 0})
+        entry["name"] = name
+        entry["cpu"] += cpu
+        entry["read"] += read
+        entry["write"] += write
+        self._dirty = True
+
     def update(self, snapshot):
         """Accumulate the usage that happened since the previous snapshot."""
         current = {}
         for proc in snapshot.procs.values():
-            if proc.kind != KIND_APP or not proc.app_id:
-                continue
             key = (proc.pid, proc.create_time)
             current[key] = (proc.cpu_time, proc.io_read, proc.io_write)
             prev = self._last.get(key)
             if prev is None:
                 continue  # only count usage observed while we were running
-            entry = self.apps.setdefault(proc.app_id, {"name": proc.app_name, "cpu": 0.0, "read": 0, "write": 0})
-            entry["name"] = proc.app_name
-            entry["cpu"] += max(0.0, proc.cpu_time - prev[0])
-            entry["read"] += max(0, proc.io_read - prev[1])
-            entry["write"] += max(0, proc.io_write - prev[2])
-            self._dirty = True
+            cpu = max(0.0, proc.cpu_time - prev[0])
+            read = max(0, proc.io_read - prev[1])
+            write = max(0, proc.io_write - prev[2])
+            if not (cpu or read or write):
+                continue
+            if proc.kind == KIND_APP and proc.app_id:
+                self._add(proc.app_id, proc.app_name, "app", cpu, read, write)
+            self._add("proc:" + proc.name, proc.name, "proc", cpu, read, write)
         self._last = current

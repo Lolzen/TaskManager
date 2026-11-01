@@ -76,11 +76,34 @@ def set_affinity(pid, cpus):
     psutil.Process(pid).cpu_affinity(list(cpus))
 
 
+APPIMAGE_SAVED_VARS = ("LD_LIBRARY_PATH", "QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH",
+                       "QML2_IMPORT_PATH", "QML_IMPORT_PATH")
+
+
+def user_env():
+    """Environment for programs started on the user's behalf.
+
+    The AppImage's launcher points the library and Qt plugin paths at its own
+    bundle and saves the caller's values (see packaging/appimage/AppRun);
+    programs we start for the user get those values back.
+    """
+    env = dict(os.environ)
+    if env.pop("TASKMANAGER_APPIMAGE", None) is None:
+        return env
+    for var in APPIMAGE_SAVED_VARS:
+        saved = env.pop("TASKMANAGER_APPIMAGE_SAVED_" + var, None)
+        if saved is None:
+            env.pop(var, None)
+        else:
+            env[var] = saved
+    return env
+
+
 def open_path(path):
     opener = "open" if sys.platform == "darwin" else "xdg-open"
     if not shutil.which(opener):
         raise OSError("'{}' is not available".format(opener))
-    subprocess.Popen([opener, path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    subprocess.Popen([opener, path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=user_env(),
                      start_new_session=True)
 
 
@@ -105,7 +128,7 @@ def run_new_task(command, elevated=False):
         if tool is None:
             raise OSError("Neither pkexec nor sudo is available")
         args = [tool] + args
-    subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=user_env(),
                      start_new_session=True)
 
 
@@ -123,13 +146,14 @@ RESOURCE_MONITORS = [
 def open_resource_monitor():
     for cmd in RESOURCE_MONITORS:
         if shutil.which(cmd[0]):
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+                             env=user_env())
             return
     for term in ("x-terminal-emulator", "gnome-terminal", "konsole", "xterm"):
         if shutil.which(term):
             mon = shutil.which("htop") or shutil.which("top")
             if mon:
-                subprocess.Popen([term, "-e", mon], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                subprocess.Popen([term, "-e", mon], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=user_env(),
                                  start_new_session=True)
                 return
     raise OSError("No resource monitor application was found.")

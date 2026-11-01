@@ -199,7 +199,7 @@ def test_app_history_accumulates_and_persists(tmp_path):
     hist = history.AppHistory(str(path))
 
     def snap(cpu, read):
-        p = ProcInfo(pid=5, create_time=1.0, kind=KIND_APP, app_id="ed", app_name="Editor",
+        p = ProcInfo(pid=5, name="editor", create_time=1.0, kind=KIND_APP, app_id="ed", app_name="Editor",
                      cpu_time=cpu, io_read=read)
         return Snapshot(procs={5: p})
 
@@ -208,6 +208,8 @@ def test_app_history_accumulates_and_persists(tmp_path):
     hist.update(snap(12.5, 400))
     assert hist.apps["ed"]["cpu"] == pytest.approx(2.5)
     assert hist.apps["ed"]["read"] == 300
+    assert list(hist.entries()) == ["ed"]
+    assert hist.entries(all_processes=True)["proc:editor"]["cpu"] == pytest.approx(2.5)
     hist.save()
     data = json.loads(path.read_text())
     assert data["apps"]["ed"]["name"] == "Editor"
@@ -224,3 +226,37 @@ def test_run_new_task_opens_folders(monkeypatch, tmp_path):
     actions.run_new_task(str(tmp_path))
     actions.run_new_task("https://example.com")
     assert opened == [str(tmp_path), "https://example.com"]
+
+
+def test_startup_type(tmp_path):
+    system = tmp_path / "etc"
+    user = tmp_path / "home"
+    system.mkdir()
+    user.mkdir()
+    (system / "a.desktop").write_text("[Desktop Entry]\nType=Application\nName=A\nExec=a\n")
+    (user / "b.desktop").write_text("[Desktop Entry]\nType=Application\nName=B\nExec=b\n")
+    items = {i.id: i for i in startup.list_xdg([str(user), str(system)])}
+    assert items["a.desktop"].source == "Autostart (system)"
+    assert items["b.desktop"].source == "Autostart (user)"
+
+
+def test_user_env_restores_what_the_appimage_launcher_changed(monkeypatch):
+    from taskmanager.backend import actions
+    monkeypatch.setenv("TASKMANAGER_APPIMAGE", "1")
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/.mount_TaskMa/usr/lib:/opt/lib")
+    monkeypatch.setenv("TASKMANAGER_APPIMAGE_SAVED_LD_LIBRARY_PATH", "/home/u/miniconda3/lib:/opt/lib")
+    monkeypatch.setenv("TASKMANAGER_APPIMAGE_SAVED_QT_PLUGIN_PATH", "/usr/lib/qt6/plugins")
+    monkeypatch.delenv("QT_PLUGIN_PATH", raising=False)
+    monkeypatch.setenv("QML2_IMPORT_PATH", "/should/not/leak")  # set inside, never saved -> removed
+    env = actions.user_env()
+    assert env["LD_LIBRARY_PATH"] == "/home/u/miniconda3/lib:/opt/lib"
+    assert env["QT_PLUGIN_PATH"] == "/usr/lib/qt6/plugins"
+    assert "QML2_IMPORT_PATH" not in env
+    assert not [k for k in env if k.startswith("TASKMANAGER_APPIMAGE")]
+
+
+def test_user_env_outside_the_appimage_is_untouched(monkeypatch):
+    from taskmanager.backend import actions
+    monkeypatch.delenv("TASKMANAGER_APPIMAGE", raising=False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/opt/lib")
+    assert actions.user_env()["LD_LIBRARY_PATH"] == "/opt/lib"

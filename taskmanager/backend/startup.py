@@ -9,6 +9,8 @@ import configparser
 import glob
 import os
 import plistlib
+import shutil
+import subprocess
 from dataclasses import dataclass
 
 from . import sysinfo
@@ -33,6 +35,8 @@ class StartupItem:
     path: str = ""
     impact: str = "Not measured"
     editable: bool = True
+    source: str = ""  # Windows 10 *Startup type*
+    kind: str = "xdg"  # xdg / launchd / systemd
 
     @property
     def status(self):
@@ -61,7 +65,9 @@ def _is_enabled(sec):
 
 def list_xdg(dirs=None):
     items = {}
-    for directory in reversed(dirs if dirs is not None else autostart_dirs()):
+    dirs = dirs if dirs is not None else autostart_dirs()
+    for directory in reversed(dirs):
+        source = "Autostart (user)" if directory == dirs[0] else "Autostart (system)"
         # later (user) directories override earlier (system) ones
         for path in sorted(glob.glob(os.path.join(directory, "*.desktop"))):
             parser = _read_desktop(path)
@@ -78,6 +84,7 @@ def list_xdg(dirs=None):
                 enabled=_is_enabled(sec),
                 command=sec.get("Exec", base.command if base else ""),
                 path=path,
+                source=source if base is None else base.source,
             )
     return sorted(items.values(), key=lambda i: i.name.lower())
 
@@ -127,17 +134,57 @@ def list_launch_agents():
                 command=program,
                 path=path,
                 editable=False,
+                source="LaunchAgent",
+                kind="launchd",
             ))
     return sorted(items, key=lambda i: i.name.lower())
 
 
-def list_startup():
+def parse_user_unit_files(text):
+    """``systemctl --user list-unit-files`` -> StartupItems for enabled/disabled units."""
+    items = []
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 2 or not parts[0].endswith(".service") or "@" in parts[0]:
+            continue
+        if parts[1] not in ("enabled", "disabled"):
+            continue  # static, indirect, generated, alias... cannot be toggled
+        name = parts[0][: -len(".service")]
+        items.append(StartupItem(id="systemd:" + parts[0], name=name, publisher="systemd user unit",
+                                 enabled=parts[1] == "enabled", command="systemctl --user start " + parts[0],
+                                 path=parts[0], source="systemd --user", kind="systemd"))
+    return items
+
+
+def list_systemd_user():
+    """Tux mode: systemd user services also start with the session."""
+    if not shutil.which("systemctl"):
+        return []
+    try:
+        out = subprocess.run(["systemctl", "--user", "list-unit-files", "--type=service", "--no-legend",
+                              "--no-pager"], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return parse_user_unit_files(out.stdout) if out.returncode == 0 else []
+
+
+def list_startup(tux=False):
     if sysinfo.IS_MAC:
         return list_launch_agents()
-    return list_xdg()
+    items = list_xdg()
+    if tux:
+        items += list_systemd_user()
+    return items
 
 
 def set_enabled(item, enabled):
     if not item.editable:
         raise PermissionError("This startup item cannot be changed from Task Manager.")
+    if item.kind == "systemd":
+        out = subprocess.run(["systemctl", "--user", "enable" if enabled else "disable", item.path],
+                             capture_output=True, text=True, timeout=30)
+        if out.returncode != 0:
+            raise OSError(out.stderr.strip() or "systemctl failed")
+        item.enabled = enabled
+        return
     set_xdg_enabled(item, enabled)

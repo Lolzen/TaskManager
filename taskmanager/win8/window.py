@@ -1,10 +1,12 @@
 """Windows 8 Task Manager layout."""
 
+from .. import theme
 from ..backend import services as svc_backend
 from ..core import run_async
 from ..qt import QtCore, QtGui, QtWidgets
 from ..widgets.dialogs import AboutDialog, RunDialog
 from ..widgets.services import ServicesPanel
+from ..widgets.tux import TuxPanel, tux_title
 from .common import STYLE
 from .other import AppHistoryTab, CompactView, StartupTab
 from .performance import PerformanceTab
@@ -13,14 +15,19 @@ from .processes import DetailsTab, ProcessesTab, UsersTab
 
 class Win8Window(QtWidgets.QMainWindow):
     LAYOUT = "win8"
+    WIN10 = False
+    STYLE = STYLE
+    DEFAULT_SIZE = QtCore.QSize(700, 640)
 
     def __init__(self, controller):
         super().__init__()
         self.controller = controller
         self.setObjectName("win8")
-        self.setWindowTitle("Task Manager")
-        self.setStyleSheet(STYLE)
+        self.tux = controller.tux
+        self.setWindowTitle(tux_title("Task Manager") if self.tux else "Task Manager")
+        self.setStyleSheet(theme.css(self.STYLE))
         self.settings = QtCore.QSettings()
+        key = self.LAYOUT
 
         self.stack = QtWidgets.QStackedWidget()
         self.compact_view = CompactView()
@@ -29,13 +36,14 @@ class Win8Window(QtWidgets.QMainWindow):
         self.stack.addWidget(self.compact_view)
 
         self.tabs = QtWidgets.QTabWidget()
-        self.procs = ProcessesTab()
-        self.perf = PerformanceTab()
+        self.procs = ProcessesTab(win10=self.WIN10, tux=self.tux)
+        self.perf = PerformanceTab(win10=self.WIN10, tux=self.tux)
         self.history = AppHistoryTab(controller.history)
-        self.startup = StartupTab()
-        self.users = UsersTab()
-        self.details = DetailsTab()
-        self.services = ServicesPanel(win8=True)
+        self.startup = StartupTab(win10=self.WIN10, tux=self.tux)
+        self.users = UsersTab(win10=self.WIN10, tux=self.tux)
+        self.details = DetailsTab(win10=self.WIN10, tux=self.tux)
+        self.services = ServicesPanel(win8=True, tux=self.tux)
+        self.tux_panel = TuxPanel(win8=True) if self.tux else None
         self.services.setObjectName("win8page")
         for widget, title in ((self.procs, "Processes"), (self.perf, "Performance"),
                               (self.history, "App history"), (self.startup, "Startup"),
@@ -44,6 +52,8 @@ class Win8Window(QtWidgets.QMainWindow):
             fewer = getattr(widget, "fewer", None)
             if fewer is not None:
                 fewer.clicked.connect(lambda: self.set_compact(True))
+        if self.tux_panel is not None:
+            self.tabs.addTab(self.tux_panel, "Tux")
         self.stack.addWidget(self.tabs)
         self.setCentralWidget(self.stack)
 
@@ -55,9 +65,9 @@ class Win8Window(QtWidgets.QMainWindow):
 
         self._build_menus()
         self.tabs.currentChanged.connect(self._tab_changed)
-        self.tabs.setCurrentIndex(self.settings.value("win8/tab", 0, type=int))
+        self.tabs.setCurrentIndex(self.initial_tab())
         self.compact = None
-        self.set_compact(self.settings.value("win8/compact", False, type=bool))
+        self.set_compact(self.settings.value(key + "/compact", False, type=bool))
         self._load_service_pids()
 
         if controller.sampler.last is not None:
@@ -81,7 +91,7 @@ class Win8Window(QtWidgets.QMainWindow):
             act.setChecked(value)
 
         view = mb.addMenu("&View")
-        view.addAction("&Refresh now", c.sampler.refresh_now, QtGui.QKeySequence("F5"))
+        view.addAction("&Refresh now", c.sampler.refresh_now).setShortcut(QtGui.QKeySequence("F5"))
         speed = view.addMenu("&Update speed")
         group = QtGui.QActionGroup(speed)
         for name in ("High", "Normal", "Low", "Paused"):
@@ -95,12 +105,19 @@ class Win8Window(QtWidgets.QMainWindow):
         self.act_group.setChecked(True)
         self.act_expand = view.addAction("&Expand all", lambda: self.procs.tree.expandAll())
         self.act_collapse = view.addAction("&Collapse all", self._collapse_all)
+        self.extend_menus(opts, view)
         view.addSeparator()
-        view.addAction("Switch to Windows &7 Layout", lambda: c.switch_layout("win7"))
+        c.add_layout_menu(view, self.LAYOUT)
 
         help_menu = mb.addMenu("&Help")
         help_menu.addAction("Task Manager &help", c.open_help)
         help_menu.addAction("&About Task Manager", lambda: AboutDialog(self, "Task Manager").exec())
+
+    def initial_tab(self):
+        return self.settings.value(self.LAYOUT + "/tab", 0, type=int)
+
+    def extend_menus(self, options, view):
+        """Hook for the Windows 10 layout's extra menu entries."""
 
     def _collapse_all(self):
         tree = self.procs.tree
@@ -115,26 +132,28 @@ class Win8Window(QtWidgets.QMainWindow):
         widget = self.tabs.widget(index)
         for act in (self.act_group, self.act_expand, self.act_collapse):
             act.setEnabled(widget is self.procs)
-        self.settings.setValue("win8/tab", index)
+        self.settings.setValue(self.LAYOUT + "/tab", index)
         snap = self.controller.sampler.last
-        if snap is not None and hasattr(widget, "update_snapshot") and widget is not self.perf:
+        live = (self.procs, self.users, self.details) + ((self.startup,) if self.WIN10 else ()) + \
+            ((self.tux_panel,) if self.tux_panel is not None else ())
+        if snap is not None and widget in live:
             widget.update_snapshot(snap)
 
     # -- modes -------------------------------------------------------------------
     def set_compact(self, compact):
         if compact == self.compact:
             return
+        key = self.LAYOUT
         if self.compact is not None:
-            key = "win8/compact_size" if self.compact else "win8/size"
-            self.settings.setValue(key, self.size())
+            self.settings.setValue(key + ("/compact_size" if self.compact else "/size"), self.size())
         self.compact = compact
-        self.settings.setValue("win8/compact", compact)
+        self.settings.setValue(key + "/compact", compact)
         self.stack.setCurrentIndex(0 if compact else 1)
         self.menuBar().setVisible(not compact)
         if compact:
-            self.resize(self.settings.value("win8/compact_size", QtCore.QSize(330, 330)))
+            self.resize(self.settings.value(key + "/compact_size", QtCore.QSize(330, 330)))
         else:
-            self.resize(self.settings.value("win8/size", QtCore.QSize(700, 640)))
+            self.resize(self.settings.value(key + "/size", self.DEFAULT_SIZE))
         snap = self.controller.sampler.last
         if snap is not None:
             self.on_snapshot(snap)
@@ -157,13 +176,17 @@ class Win8Window(QtWidgets.QMainWindow):
         current = self.tabs.currentWidget()
         if current in (self.procs, self.users, self.details):
             current.update_snapshot(snap)
+        elif current is self.startup and self.WIN10:
+            current.update_snapshot(snap)
+        elif current is not None and current is self.tux_panel:
+            current.update_snapshot(snap)
 
     def _load_service_pids(self):
         def done(result, error):
             if error is None:
                 self.details.service_pids = svc_backend.services_by_pid(result)
 
-        run_async(svc_backend.list_services, done)
+        run_async(svc_backend.list_services, done, self)
 
     def goto_details(self, pid):
         self.tabs.setCurrentWidget(self.details)
@@ -174,7 +197,7 @@ class Win8Window(QtWidgets.QMainWindow):
         QtCore.QTimer.singleShot(800, lambda: self.services.select_pid(pid))
 
     def closeEvent(self, event):
-        key = "win8/compact_size" if self.compact else "win8/size"
+        key = self.LAYOUT + ("/compact_size" if self.compact else "/size")
         self.settings.setValue(key, self.size())
         self.controller.window_closed(self)
         super().closeEvent(event)

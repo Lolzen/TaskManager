@@ -4,11 +4,12 @@ import os
 import socket
 from urllib.parse import quote_plus
 
-from ..backend import actions
+from ..backend import actions, sysinfo
 from ..backend.formatting import MB, fmt_cpu_time, fmt_disk_rate, fmt_kb, fmt_mem_mb
 from ..backend.sampler import KIND_APP, KIND_BACKGROUND, KIND_SYSTEM
 from ..core import bulk_update
 from ..qt import QtCore, QtWidgets, Qt, Signal
+from ..widgets import tux as tuxui
 from ..widgets.dialogs import PropertiesDialog, confirm, confirm_end, guarded, process_menu
 from ..widgets.tree import KEY_ROLE, LEFT, RIGHT, ColumnChooser, SortItem, make_tree, set_cell
 from .common import (APP_ICON, PROC_ICON, SYS_ICON, USER_ICON, GroupItem, LinkButton, bottom_bar,
@@ -25,6 +26,42 @@ def fmt_cpu8(value):
 
 def fmt_disk8(bps):
     return "0 MB/s" if bps < 0.05 * MB else fmt_disk_rate(bps)
+
+
+POWER_LEVELS = ["Very low", "Low", "Moderate", "High", "Very high"]
+POWER_LIMITS = [1.0, 5.0, 15.0, 35.0]
+
+
+def power_score(cpu, gpu, disk_bps):
+    """Estimate of a process' power draw. Like Windows 10, this is derived from
+    CPU, GPU and disk activity rather than measured."""
+    return cpu + 0.6 * gpu + 0.5 * disk_bps / MB
+
+
+def power_level(score):
+    for idx, limit in enumerate(POWER_LIMITS):
+        if score < limit:
+            return idx
+    return len(POWER_LIMITS)
+
+
+_arch_cache = {}
+
+
+def architecture(proc):
+    if proc.exe not in _arch_cache:
+        _arch_cache[proc.exe] = sysinfo.binary_architecture(proc.exe) if proc.exe else ""
+    return _arch_cache[proc.exe]
+
+
+def full_account_name(user):
+    """``Full Name (user)`` as Windows 10 shows with *Show full account name*."""
+    try:
+        import pwd
+        gecos = pwd.getpwnam(user).pw_gecos.split(",")[0].strip()
+    except (ImportError, KeyError):
+        gecos = ""
+    return "{} ({})".format(gecos, user) if gecos else user
 
 
 class TreeTab(QtWidgets.QWidget):
@@ -78,6 +115,15 @@ class MetricTreeTab(TreeTab):
     """Shared by *Processes* and *Users*: CPU / Memory / Disk / Network heat map."""
 
     METRIC_COLS = ()  # (cpu, mem, disk, net) column indexes
+    GPU_COLS = ()  # Windows 10: (gpu, gpu engine)
+
+    def fill_gpu(self, item, gpu, engine):
+        if not self.GPU_COLS:
+            return
+        c_gpu, c_engine = self.GPU_COLS
+        set_cell(item, c_gpu, fmt_cpu8(gpu), gpu, RIGHT)
+        set_cell(item, c_engine, engine if gpu >= 0.05 else "")
+        set_heat(item, c_gpu, gpu / 40.0)
 
     def fill_metrics(self, item, cpu, mem, disk, total_mem):
         c_cpu, c_mem, c_disk, c_net = self.METRIC_COLS
@@ -99,6 +145,9 @@ class MetricTreeTab(TreeTab):
         self.header.set_metric(c_mem, "{:.0f}%".format(snap.mem.percent), snap.mem.percent / 100.0)
         self.header.set_metric(c_disk, "{:.0f}%".format(disk_active), disk_active / 100.0)
         self.header.set_metric(c_net, "{:.0f}%".format(net_util), net_util / 100.0)
+        if self.GPU_COLS:
+            gpu_util = max((g.utilization for g in snap.gpus), default=0.0)
+            self.header.set_metric(self.GPU_COLS[0], "{:.0f}%".format(gpu_util), gpu_util / 100.0)
 
 
 PROC_COLUMNS = ["Name", "Type", "Status", "PID", "Process name", "Command line", "CPU", "Memory", "Disk", "Network"]
@@ -106,25 +155,42 @@ PROC_HIDDEN = ["Type", "PID", "Process name", "Command line"]
 TYPE_LABELS = {KIND_APP: "App", KIND_BACKGROUND: "Background process", KIND_SYSTEM: "System process"}
 
 
+WIN10_PROC_COLUMNS = ["GPU", "GPU engine", "Power usage", "Power usage trend"]
+TUX_PROC_COLUMNS = ["systemd unit", "Container", "OOM score", "Memory (USS)"]
+
+
 class ProcessesTab(MetricTreeTab):
     METRIC_COLS = (6, 7, 8, 9)
     goto_details = Signal(int)
     used = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, win10=False, tux=False, parent=None):
         super().__init__(parent)
+        self.win10 = win10
+        self.tux = tux
         self.group_by_type = True
+        self.trends = {}  # row key -> smoothed power score (Windows 10 *Power usage trend*)
+        columns = PROC_COLUMNS + (WIN10_PROC_COLUMNS if win10 else [])
+        self.tux_col = len(columns)
+        columns = columns + (TUX_PROC_COLUMNS if tux else [])
+        if win10:
+            self.GPU_COLS = (10, 11)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        self.tree = make_tree(PROC_COLUMNS, root_decorated=True)
-        self.header = install_header(self.tree, right_aligned=[3, 6, 7, 8, 9])
-        self.tree.setHeaderLabels(PROC_COLUMNS)
-        for idx, width in enumerate((250, 120, 80, 55, 110, 250, 70, 85, 75, 75)):
-            self.header.resizeSection(idx, width)
+        self.tree = make_tree(columns, root_decorated=True)
+        self.header = install_header(self.tree, right_aligned=[3, 6, 7, 8, 9, 10])
+        self.tree.setHeaderLabels(columns)
+        for idx, width in enumerate((250, 120, 80, 55, 110, 250, 70, 85, 75, 75, 60, 100, 90, 120)):
+            if idx < len(columns):
+                self.header.resizeSection(idx, width)
+        if tux:
+            self.header.right_aligned |= {self.tux_col + 2, self.tux_col + 3}
+            for offset, width in enumerate((170, 80, 75, 95)):
+                self.header.resizeSection(self.tux_col + offset, width)
         for title in PROC_HIDDEN:
-            self.header.setSectionHidden(PROC_COLUMNS.index(title), True)
-        column_menu(self.tree, PROC_COLUMNS)
+            self.header.setSectionHidden(columns.index(title), True)
+        column_menu(self.tree, columns)
         self.tree.sortByColumn(0, Qt.SortOrder.AscendingOrder)
         self.tree.customContextMenuRequested.connect(self._menu)
         self.tree.itemSelectionChanged.connect(self._sel_changed)
@@ -185,8 +251,16 @@ class ProcessesTab(MetricTreeTab):
                 self._fill_static(item, procs[0], KIND_APP)
                 hung = any(p.status == "Suspended" for p in procs)
                 set_cell(item, 2, "Suspended" if hung else "")
+                if self.tux:
+                    self.fill_tux(item, procs)
                 self.fill_metrics(item, sum(p.cpu for p in procs), sum(p.mem_private for p in procs),
                                   sum(p.disk_bps for p in procs), total)
+                if self.win10:
+                    busiest = max(procs, key=lambda p: p.gpu)
+                    gpu = min(100.0, sum(p.gpu for p in procs))
+                    self.fill_gpu(item, gpu, busiest.gpu_engine)
+                    self.fill_power(item, "app:" + app_id, sum(p.cpu for p in procs), gpu,
+                                    sum(p.disk_bps for p in procs), snap.interval)
                 if len(procs) > 1:
                     for proc in procs:
                         child = self.node("pid:{}".format(proc.pid), item)
@@ -197,8 +271,33 @@ class ProcessesTab(MetricTreeTab):
                     item = self.node("pid:{}".format(proc.pid), parents.get(kind))
                     self._fill_proc(item, proc, total)
             self.end()
+        if self.win10:
+            self.trends = {k: v for k, v in self.trends.items() if k in self.items}
         self.update_header(snap)
         self._sel_changed()
+
+    def fill_power(self, item, key, cpu, gpu, disk, interval):
+        score = power_score(cpu, gpu, disk)
+        # exponential average over roughly two minutes
+        alpha = min(1.0, max(interval, 0.1) / 120.0)
+        trend = self.trends.get(key, score) * (1 - alpha) + score * alpha
+        self.trends[key] = trend
+        level, trend_level = power_level(score), power_level(trend)
+        set_cell(item, 12, POWER_LEVELS[level], level)
+        set_cell(item, 13, POWER_LEVELS[trend_level], trend_level)
+        set_heat(item, 12, level / 4.0)
+        set_heat(item, 13, trend_level / 4.0)
+
+    def fill_tux(self, item, procs):
+        extras = [p.tux for p in procs if p.tux is not None]
+        col = self.tux_col
+        units = sorted({e.unit for e in extras if e.unit})
+        set_cell(item, col, ", ".join(units[:2]) + (" \u2026" if len(units) > 2 else ""))
+        set_cell(item, col + 1, next((e.container for e in extras if e.container), ""))
+        oom = max((e.oom_score for e in extras), default=0)
+        set_cell(item, col + 2, str(oom) if extras else "", oom, RIGHT)
+        uss = sum(e.uss for e in extras)
+        set_cell(item, col + 3, fmt_mem_mb(uss) if uss else "", uss, RIGHT)
 
     def _fill_static(self, item, proc, kind):
         set_cell(item, 1, TYPE_LABELS[kind])
@@ -214,7 +313,14 @@ class ProcessesTab(MetricTreeTab):
             item.setIcon(0, icon_for(proc.icon, fallback))
         self._fill_static(item, proc, proc.kind)
         set_cell(item, 2, "Suspended" if proc.status == "Suspended" else "")
+        if self.tux:
+            set_cell(item, 2, tuxui.proc_status(proc, item.text(2)))
+            self.fill_tux(item, [proc])
         self.fill_metrics(item, proc.cpu, proc.mem_private, proc.disk_bps, total)
+        if self.win10:
+            self.fill_gpu(item, proc.gpu, proc.gpu_engine)
+            self.fill_power(item, "pid:{}".format(proc.pid), proc.cpu, proc.gpu, proc.disk_bps,
+                            self.snap.interval if self.snap else 1.0)
 
     # -- actions ----------------------------------------------------------------
     def _selection(self):
@@ -280,8 +386,16 @@ USER_COLUMNS = ["User", "ID", "Session", "Client name", "Status", "CPU", "Memory
 class UsersTab(MetricTreeTab):
     METRIC_COLS = (5, 6, 7, 8)
 
-    def __init__(self, parent=None):
+    def __init__(self, win10=False, tux=False, parent=None):
         super().__init__(parent)
+        self.win10 = win10
+        self.tux = tux
+        self.full_names = False
+        columns = USER_COLUMNS + (["GPU", "GPU engine"] if win10 else [])
+        self.tux_col = len(columns)
+        columns = columns + (tuxui.USER_COLUMNS if tux else [])
+        if win10:
+            self.GPU_COLS = (9, 10)
         self.own_user = None
         try:
             import pwd
@@ -291,14 +405,15 @@ class UsersTab(MetricTreeTab):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        self.tree = make_tree(USER_COLUMNS, root_decorated=True)
-        self.header = install_header(self.tree, right_aligned=[1, 5, 6, 7, 8])
-        self.tree.setHeaderLabels(USER_COLUMNS)
-        for idx, width in enumerate((230, 40, 80, 110, 90, 70, 85, 75, 75)):
-            self.header.resizeSection(idx, width)
+        self.tree = make_tree(columns, root_decorated=True)
+        self.header = install_header(self.tree, right_aligned=[1, 5, 6, 7, 8, 9])
+        self.tree.setHeaderLabels(columns)
+        for idx, width in enumerate((230, 40, 80, 110, 90, 70, 85, 75, 75, 60, 100)):
+            if idx < len(columns):
+                self.header.resizeSection(idx, width)
         for idx in (1, 2, 3):
             self.header.setSectionHidden(idx, True)
-        column_menu(self.tree, USER_COLUMNS, always=("User",))
+        column_menu(self.tree, columns, always=("User",))
         self.tree.sortByColumn(0, Qt.SortOrder.AscendingOrder)
         self.tree.customContextMenuRequested.connect(self._menu)
         layout.addWidget(self.tree, 1)
@@ -326,23 +441,32 @@ class UsersTab(MetricTreeTab):
             for name, (sid, session) in sessions.items():
                 procs = by_user.get(name, [])
                 item = self.node("user:" + name)
-                set_cell(item, 0, "{} ({})".format(name, len(procs)), name.lower())
+                label = full_account_name(name) if self.full_names else name
+                set_cell(item, 0, "{} ({})".format(label, len(procs)), name.lower())
                 if item.icon(0).isNull():
                     item.setIcon(0, icon_for("user-identity", USER_ICON))
                 set_cell(item, 1, str(sid), sid, RIGHT)
                 set_cell(item, 2, (session.terminal if session else "") or "Console")
                 set_cell(item, 3, (session.host if session else "") or socket.gethostname())
                 set_cell(item, 4, "")
+                if self.tux:
+                    for offset, value in enumerate(tuxui.account_info(name)):
+                        set_cell(item, self.tux_col + offset, value)
                 self.fill_metrics(item, sum(p.cpu for p in procs), sum(p.mem_private for p in procs),
                                   sum(p.disk_bps for p in procs), total)
+                if procs:
+                    busiest = max(procs, key=lambda p: p.gpu)
+                    self.fill_gpu(item, min(100.0, sum(p.gpu for p in procs)), busiest.gpu_engine)
                 for proc in procs:
                     child = self.node("pid:{}".format(proc.pid), item)
                     label = proc.app_name or proc.name
                     set_cell(child, 0, label, label.lower())
                     if child.icon(0).isNull():
                         child.setIcon(0, icon_for(proc.icon, APP_ICON if proc.app_id else PROC_ICON))
-                    set_cell(child, 4, "Suspended" if proc.status == "Suspended" else "")
+                    status = "Suspended" if proc.status == "Suspended" else ""
+                    set_cell(child, 4, tuxui.proc_status(proc, status) if self.tux else status)
                     self.fill_metrics(child, proc.cpu, proc.mem_private, proc.disk_bps, total)
+                    self.fill_gpu(child, proc.gpu, proc.gpu_engine)
             self.end()
         self.update_header(snap)
 
@@ -414,25 +538,47 @@ DETAIL_COLUMNS = [
     DetailColumn("Command line", lambda p: p.cmdline, width=300),
 ]
 
+WIN10_DETAIL_COLUMNS = [
+    DetailColumn("Architecture", architecture, width=80, default=True),
+    DetailColumn("Elevated", lambda p: "Yes" if p.euid == 0 else "No", width=65),
+    DetailColumn("GPU", lambda p: "{:02.0f}".format(min(99, p.gpu)), lambda p: p.gpu, RIGHT, 40),
+    DetailColumn("GPU engine", lambda p: p.gpu_engine if p.gpu >= 0.05 else "", width=110),
+    DetailColumn("Dedicated GPU memory", lambda p: fmt_kb(p.gpu_dedicated), lambda p: p.gpu_dedicated,
+                 RIGHT, 120),
+    DetailColumn("Shared GPU memory", lambda p: fmt_kb(p.gpu_shared), lambda p: p.gpu_shared, RIGHT, 110),
+]
+
+
+TUX_DETAIL_COLUMNS = [DetailColumn(title, text, sort, align, width, default)
+                      for title, text, sort, align, width, default in tuxui.PROC_COLUMNS
+                      if title not in ("Parent PID", "State")]
+
 
 class DetailsTab(TreeTab):
     goto_service = Signal(int)
 
-    def __init__(self, parent=None):
+    def __init__(self, win10=False, tux=False, parent=None):
         super().__init__(parent)
+        self.columns = DETAIL_COLUMNS + (WIN10_DETAIL_COLUMNS if win10 else []) + \
+            (TUX_DETAIL_COLUMNS if tux else [])
+        if tux:
+            # the Status column shows the real kernel state (Sleeping, Disk sleep, Zombie, ...)
+            self.columns = [DetailColumn("Status", lambda p: tuxui.proc_status(p, p.status), width=85, default=True)
+                            if c.title == "Status" else c for c in self.columns]
+        self.settings_key = "{}/detail_columns{}".format("win10" if win10 else "win8", "_tux" if tux else "")
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        titles = [c.title for c in DETAIL_COLUMNS]
+        titles = [c.title for c in self.columns]
         self.tree = make_tree(titles)
-        self.header = install_header(self.tree, right_aligned=[i for i, c in enumerate(DETAIL_COLUMNS)
+        self.header = install_header(self.tree, right_aligned=[i for i, c in enumerate(self.columns)
                                                                if c.align == RIGHT])
         self.tree.setHeaderLabels(titles)
         self.header.setFixedHeight(26)
         settings = QtCore.QSettings()
-        visible = settings.value("win8/detail_columns", None, type=list) or \
-            [c.title for c in DETAIL_COLUMNS if c.default]
-        for idx, col in enumerate(DETAIL_COLUMNS):
+        visible = settings.value(self.settings_key, None, type=list) or \
+            [c.title for c in self.columns if c.default]
+        for idx, col in enumerate(self.columns):
             self.header.resizeSection(idx, col.width)
             self.header.setSectionHidden(idx, col.title not in visible)
         self.header.customContextMenuRequested.connect(self._header_menu)
@@ -455,15 +601,15 @@ class DetailsTab(TreeTab):
         menu.exec(self.header.mapToGlobal(pos))
 
     def choose_columns(self):
-        titles = [c.title for c in DETAIL_COLUMNS[1:]]
-        visible = [c.title for i, c in enumerate(DETAIL_COLUMNS) if not self.header.isSectionHidden(i)]
+        titles = [c.title for c in self.columns[1:]]
+        visible = [c.title for i, c in enumerate(self.columns) if not self.header.isSectionHidden(i)]
         dlg = ColumnChooser("Select columns", "Select the columns that will appear in the table.",
                             titles, visible, self)
         if dlg.exec():
             chosen = set(dlg.chosen())
-            for idx, col in enumerate(DETAIL_COLUMNS[1:], start=1):
+            for idx, col in enumerate(self.columns[1:], start=1):
                 self.header.setSectionHidden(idx, col.title not in chosen)
-            QtCore.QSettings().setValue("win8/detail_columns", ["Name"] + sorted(chosen))
+            QtCore.QSettings().setValue(self.settings_key, ["Name"] + sorted(chosen))
 
     def update_snapshot(self, snap):
         self.snap = snap
@@ -471,7 +617,7 @@ class DetailsTab(TreeTab):
             self.begin()
             for proc in snap.procs.values():
                 item = self.node(proc.pid)
-                for idx, col in enumerate(DETAIL_COLUMNS):
+                for idx, col in enumerate(self.columns):
                     set_cell(item, idx, col.text(proc), col.sort(proc) if col.sort else None, col.align)
                 if item.icon(0).isNull():
                     item.setIcon(0, icon_for(proc.icon, SYS_ICON if proc.kind == KIND_SYSTEM else PROC_ICON))

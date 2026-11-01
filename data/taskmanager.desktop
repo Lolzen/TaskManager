@@ -4,11 +4,11 @@ Name=Task Manager
 GenericName=Task Manager
 Comment=Monitor processes, performance, services and startup programs
 Exec=taskmanager
-Icon=utilities-system-monitor
+Icon=taskmanager
 Terminal=false
 Categories=System;Monitor;
 Keywords=process;task;monitor;cpu;memory;kill;
-Actions=Win7;Win8;
+Actions=Win7;Win8;Win10;Tux;
 
 [Desktop Action Win7]
 Name=Task Manager (Windows 7 layout)
@@ -17,3 +17,11 @@ Exec=taskmanager --win7
 [Desktop Action Win8]
 Name=Task Manager (Windows 8 layout)
 Exec=taskmanager --win8
+
+[Desktop Action Win10]
+Name=Task Manager (Windows 10 layout)
+Exec=taskmanager --win10
+
+[Desktop Action Tux]
+Name=Task Manager (Tux mode)
+Exec=taskmanager --tux

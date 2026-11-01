@@ -5,7 +5,7 @@ import sys
 import traceback
 
 from .backend.sampler import Sampler
-from .qt import QtCore, Signal, Slot
+from .qt import QtCore, Signal, Slot, is_alive
 
 # Windows' *Update speed* menu
 SPEEDS = {"High": 500, "Normal": 1000, "Low": 4000, "Paused": 0}
@@ -19,10 +19,12 @@ class _SamplerWorker(QtCore.QObject):
         super().__init__()
         self.sampler = None
         self.timer = None
+        self.tux = False
 
     @Slot()
     def start(self):
         self.sampler = Sampler()
+        self.sampler.tux = self.tux
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.tick()  # prime the counters so the first real sample has rates
@@ -36,6 +38,12 @@ class _SamplerWorker(QtCore.QObject):
             self.timer.stop()
         else:
             self.timer.start(msec)
+
+    @Slot(bool)
+    def set_tux(self, enabled):
+        self.tux = enabled
+        if self.sampler is not None:
+            self.sampler.tux = enabled
 
     @Slot()
     def shutdown(self):
@@ -60,6 +68,7 @@ class SamplerThread(QtCore.QObject):
 
     snapshot = Signal(object)
     _set_interval = Signal(int)
+    _set_tux = Signal(bool)
     _tick = Signal()
 
     def __init__(self, parent=None):
@@ -73,6 +82,7 @@ class SamplerThread(QtCore.QObject):
         self._worker.sampled.connect(self._on_sample)
         self._worker.failed.connect(sys.stderr.write)
         self._set_interval.connect(self._worker.set_interval)
+        self._set_tux.connect(self._worker.set_tux)
         self._tick.connect(self._worker.tick)
         self._thread.start()
         self.set_speed(self.speed)
@@ -84,6 +94,9 @@ class SamplerThread(QtCore.QObject):
     def set_speed(self, name):
         self.speed = name
         self._set_interval.emit(SPEEDS[name])
+
+    def set_tux(self, enabled):
+        self._set_tux.emit(enabled)
 
     def refresh_now(self):
         self._tick.emit()
@@ -109,19 +122,34 @@ class _Task(QtCore.QRunnable):
             result, error = self.fn(), None
         except Exception as exc:  # noqa: BLE001 - reported to the callback
             result, error = None, exc
-        self.relay.done.emit(result, error)
+        # When the application quits while fn() runs, interpreter teardown can
+        # delete the relay first. PyQt6 aborts on an exception escaping run(),
+        # and there is nobody left to deliver the result to anyway.
+        try:
+            if is_alive(self.relay):
+                self.relay.done.emit(result, error)
+        except RuntimeError:
+            pass
 
 
 _relays = set()
 
 
-def run_async(fn, callback):
-    """Run ``fn()`` on the thread pool and call ``callback(result, error)``."""
+def run_async(fn, callback, owner=None):
+    """Run ``fn()`` on the thread pool and call ``callback(result, error)``.
+
+    When ``owner`` (the widget the callback updates) has been deleted by the
+    time ``fn`` returns, e.g. because the user switched layouts, the callback
+    is dropped. PyQt6 aborts the whole application on an exception in a slot,
+    so touching the deleted widget is not an option.
+    """
     relay = _Relay()
     _relays.add(relay)
 
     def finish(result, error):
         _relays.discard(relay)
+        if owner is not None and not is_alive(owner):
+            return
         callback(result, error)
 
     relay.done.connect(finish, QtCore.Qt.ConnectionType.QueuedConnection)

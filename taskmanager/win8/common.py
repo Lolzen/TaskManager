@@ -1,54 +1,51 @@
 """Look and feel helpers of the Windows 8 layout."""
 
+from .. import theme
 from ..qt import QtCore, QtGui, QtWidgets, Qt
 from ..widgets.tree import SortItem, blend
 
 STYLE = """
-QMainWindow#win8, QWidget#win8page { background: #FFFFFF; }
-QTabWidget::pane { border: none; border-top: 1px solid #D9D9D9; background: #FFFFFF; top: -1px; }
+QMainWindow#win8, QWidget#win8page { background: $base_bg; }
+QTabWidget::pane { border: none; border-top: 1px solid $border; background: $base_bg; top: -1px; }
 QTabWidget::tab-bar { left: 2px; }
 QTabBar::tab {
-    background: #FFFFFF; color: #000000; border: 1px solid transparent; border-bottom: none;
+    background: $base_bg; color: $text; border: 1px solid transparent; border-bottom: none;
     padding: 3px 9px 4px 9px; margin-right: 0px;
 }
-QTabBar::tab:hover:!selected { background: #E5F1FB; border-color: #E5F1FB; }
-QTabBar::tab:selected { border-color: #D9D9D9; background: #FFFFFF; }
-QTreeWidget { border: none; background: #FFFFFF; selection-background-color: #CCE8FF; selection-color: #000000; outline: 0; }
+QTabBar::tab:hover:!selected { background: $tab_hover; border-color: $tab_hover; }
+QTabBar::tab:selected { border-color: $border; background: $base_bg; }
+QTreeWidget { border: none; background: $base_bg; color: $text; selection-background-color: $selected_bg; selection-color: $selected_text; outline: 0; }
 QTreeWidget::item { padding: 1px 0px; border: none; }
-QTreeWidget::item:hover { background: #E5F3FF; }
-QTreeWidget::item:selected { background: #CCE8FF; color: #000000; }
-QHeaderView { background: #FFFFFF; }
+QTreeWidget::item:hover { background: $hover_bg; }
+QTreeWidget::item:selected { background: $selected_bg; color: $selected_text; }
+QHeaderView { background: $base_bg; }
 QPushButton {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #F0F0F0, stop:1 #E5E5E5);
-    border: 1px solid #ACACAC; padding: 3px 16px; min-height: 16px; color: #000000;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $btn_top, stop:1 $btn_bottom);
+    border: 1px solid $btn_border; padding: 3px 16px; min-height: 16px; color: $text;
 }
-QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ECF4FC, stop:1 #DCECFC); border-color: #7EB4EA; }
-QPushButton:pressed { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #DAECFC, stop:1 #C4E0FC); border-color: #569DE5; }
-QPushButton:disabled { background: #F4F4F4; border-color: #ADB2B5; color: #838383; }
-QMenuBar { background: #FFFFFF; }
-QMenuBar::item:selected { background: #E5F3FF; }
-QLabel#win8link, QToolButton#win8link { color: #0066CC; }
+QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $btn_hover_top, stop:1 $btn_hover_bottom); border-color: $btn_hover_border; }
+QPushButton:pressed { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $btn_pressed_top, stop:1 $btn_pressed_bottom); border-color: $btn_pressed_border; }
+QPushButton:disabled { background: $btn_disabled_bg; border-color: $btn_disabled_border; color: $disabled_text; }
+QMenuBar { background: $base_bg; color: $text; }
+QMenuBar::item:selected { background: $hover_bg; }
+QLabel#win8link, QToolButton#win8link { color: $link; }
 QToolButton#win8link { border: none; background: transparent; padding: 2px; }
-QToolButton#win8link:hover { color: #3399FF; text-decoration: underline; }
-QWidget#bottombar { background: #FFFFFF; border-top: 1px solid #E5E5E5; }
-QScrollArea { border: none; background: #FFFFFF; }
-QListWidget#compact { border: none; background: #FFFFFF; outline: 0; }
+QToolButton#win8link:hover { color: $link_hover; text-decoration: underline; }
+QWidget#bottombar { background: $base_bg; border-top: 1px solid $separator; }
+QScrollArea { border: none; background: $base_bg; }
+QListWidget#compact { border: none; background: $base_bg; color: $text; outline: 0; }
 QListWidget#compact::item { padding: 3px 4px; }
-QListWidget#compact::item:hover { background: #E5F3FF; }
-QListWidget#compact::item:selected { background: #CCE8FF; color: #000000; }
+QListWidget#compact::item:hover { background: $hover_bg; }
+QListWidget#compact::item:selected { background: $selected_bg; color: $selected_text; }
 """
-
-HEAT_STOPS = ("#FFF4C4", "#FFE7A1", "#FFC66B", "#F99E44")
-HEADER_TEXT = QtGui.QColor("#4C607A")
-GROUP_TEXT = QtGui.QColor("#1E3287")
-
 
 def heat_color(t):
     """Yellow-to-orange shading Windows 8 uses for busy cells and headers."""
+    stops = theme.heat_stops()
     t = max(0.0, min(1.0, t))
-    segment = min(len(HEAT_STOPS) - 2, int(t * (len(HEAT_STOPS) - 1)))
-    local = t * (len(HEAT_STOPS) - 1) - segment
-    return blend(HEAT_STOPS[segment], HEAT_STOPS[segment + 1], local)
+    segment = min(len(stops) - 2, int(t * (len(stops) - 1)))
+    local = t * (len(stops) - 1) - segment
+    return blend(stops[segment], stops[segment + 1], local)
 
 
 HEAT_ROLE = Qt.ItemDataRole.UserRole + 3
@@ -103,11 +100,11 @@ class MetricHeader(QtWidgets.QHeaderView):
             return
         painter.save()
         metric = self.metrics.get(index)
-        background = QtGui.QColor("#FFFFFF")
+        background = theme.qcolor("base_bg")
         if metric is not None and metric[1] is not None and metric[1] > 0.5:
             background = heat_color((metric[1] - 0.5) * 2)
         painter.fillRect(rect, background)
-        painter.setPen(QtGui.QColor("#E5E5E5"))
+        painter.setPen(theme.qcolor("separator"))
         painter.drawLine(rect.topRight(), rect.bottomRight())
         painter.drawLine(rect.bottomLeft(), rect.bottomRight())
 
@@ -116,20 +113,20 @@ class MetricHeader(QtWidgets.QHeaderView):
         inner = rect.adjusted(6, 3, -6, -4)
         font = QtGui.QFont(self.font())
         painter.setFont(font)
-        painter.setPen(HEADER_TEXT)
+        painter.setPen(theme.qcolor("header_text"))
         painter.drawText(inner, int(align | Qt.AlignmentFlag.AlignBottom),
                          painter.fontMetrics().elidedText(label, Qt.TextElideMode.ElideRight, inner.width()))
         if metric is not None and metric[0]:
             big = QtGui.QFont(font)
             big.setPointSizeF(font.pointSizeF() * 1.45)
             painter.setFont(big)
-            painter.setPen(QtGui.QColor("#000000"))
+            painter.setPen(theme.qcolor("text"))
             painter.drawText(inner.adjusted(0, 6, 0, 0), int(align | Qt.AlignmentFlag.AlignTop), metric[0])
 
         if self.isSortIndicatorShown() and self.sortIndicatorSection() == index:
             cx, top = rect.center().x(), rect.top() + 2
             painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
-            painter.setPen(QtGui.QPen(QtGui.QColor("#97A5B9"), 1.2))
+            painter.setPen(QtGui.QPen(theme.qcolor("caret"), 1.2))
             if self.sortIndicatorOrder() == Qt.SortOrder.AscendingOrder:
                 pts = [QtCore.QPointF(cx - 4, top + 4), QtCore.QPointF(cx, top), QtCore.QPointF(cx + 4, top + 4)]
             else:
@@ -177,7 +174,7 @@ class GroupItem(SortItem):
         font = QtGui.QFont()
         font.setBold(True)
         self.setFont(0, font)
-        self.setForeground(0, QtGui.QBrush(GROUP_TEXT))
+        self.setForeground(0, QtGui.QBrush(theme.qcolor("group_text")))
         self.setFirstColumnSpanned(True)
         self.setFlags(Qt.ItemFlag.ItemIsEnabled)
 

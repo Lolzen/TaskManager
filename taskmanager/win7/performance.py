@@ -4,6 +4,7 @@ from ..backend import actions
 from ..backend.formatting import MB, fmt_link_speed, fmt_uptime
 from ..backend.sampler import ASSUMED_LINK_MBPS
 from ..qt import QtWidgets, Qt
+from ..widgets import tux as tuxui
 from ..widgets.dialogs import show_error
 from ..widgets.graph import WIN7_KERNEL_STYLE, WIN7_STYLE, GraphStyle, HistoryGraph, LedMeter, nice_ceiling
 from ..widgets.tree import ItemSync, RIGHT, make_tree, set_cell
@@ -42,8 +43,9 @@ class StatsBox(QtWidgets.QGroupBox):
 
 
 class PerformanceTab(QtWidgets.QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, tux=False, parent=None):
         super().__init__(parent)
+        self.tux = tux
         self.one_graph_per_cpu = True
         self.show_kernel = False
         grid = QtWidgets.QGridLayout(self)
@@ -68,6 +70,10 @@ class PerformanceTab(QtWidgets.QWidget):
         self.kern = StatsBox("Kernel Memory (MB)", ["Slab", "Kernel Stack"])
         left.addWidget(self.phys)
         left.addWidget(self.kern)
+        self.linux = None
+        if tux:
+            self.linux = StatsBox("Linux", ["Load Average", "CPU Pressure", "Context Switches/s", "Temperature"])
+            left.addWidget(self.linux)
         right = QtWidgets.QVBoxLayout()
         self.system = StatsBox("System", ["Handles", "Threads", "Processes", "Up Time", "Commit (MB)"])
         right.addWidget(self.system)
@@ -144,6 +150,12 @@ class PerformanceTab(QtWidgets.QWidget):
         self.system.set("Processes", "{:,}".format(snap.process_count))
         self.system.set("Up Time", fmt_uptime(snap.uptime))
         self.system.set("Commit (MB)", "{:,} / {:,}".format(mem.commit // MB, mem.commit_limit // MB))
+        if self.linux is not None and snap.tux is not None:
+            values = tuxui.cpu_values(snap.tux)
+            self.linux.set("Load Average", values["Load average"])
+            self.linux.set("CPU Pressure", values["CPU pressure"])
+            self.linux.set("Context Switches/s", values["Context switches/s"])
+            self.linux.set("Temperature", values["Temperature"])
 
 
 class ScaledGraph(QtWidgets.QWidget):
@@ -185,8 +197,9 @@ class ScaledGraph(QtWidgets.QWidget):
 
 
 class NetworkingTab(QtWidgets.QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, tux=False, parent=None):
         super().__init__(parent)
+        self.tux = tux
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         self.graph_area = QtWidgets.QWidget()
@@ -202,9 +215,10 @@ class NetworkingTab(QtWidgets.QWidget):
         self.graph_layout.addWidget(self.empty)
         self.graphs = {}
         self.table = make_tree(["Adapter Name", "Network Utilization", "Link Speed", "State",
-                                "Bytes Sent/Interval", "Bytes Received/Interval"])
+                                "Bytes Sent/Interval", "Bytes Received/Interval"] +
+                               (tuxui.NET_KEYS if tux else []))
         header = self.table.header()
-        for col, width in enumerate((150, 120, 80, 90, 120, 130)):
+        for col, width in enumerate((150, 120, 80, 90, 120, 130, 130, 50, 60, 100, 100)):
             header.resizeSection(col, width)
         self.sync = ItemSync(self.table)
         layout.addWidget(self.table, 1)
@@ -238,4 +252,7 @@ class NetworkingTab(QtWidgets.QWidget):
             set_cell(item, 3, "Connected" if net.is_up else "Disconnected")
             set_cell(item, 4, "{:,}".format(int(net.sent_bps * snap.interval)), net.sent_bps, RIGHT)
             set_cell(item, 5, "{:,}".format(int(net.recv_bps * snap.interval)), net.recv_bps, RIGHT)
+            if self.tux and snap.tux is not None:
+                for offset, (key, value) in enumerate(tuxui.net_values(snap.tux, net.name).items()):
+                    set_cell(item, 6 + offset, value)
         self.sync.end()

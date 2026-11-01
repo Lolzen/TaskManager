@@ -4,10 +4,15 @@ import shutil
 import subprocess
 
 from ..backend import services as svc_backend
+from ..backend.actions import user_env
 from ..core import bulk_update, run_async
 from ..qt import QtCore, QtWidgets, Qt, Signal
 from .dialogs import show_error
+from ..backend.formatting import fmt_bytes, fmt_cpu_time
 from .tree import ItemSync, LEFT, RIGHT, make_tree, set_cell
+
+# systemd details shown in Tux mode
+TUX_COLUMNS = ["Startup", "State", "Type", "Memory", "Tasks", "CPU time", "Restarts"]
 
 SERVICE_TOOLS = [["systemd-manager"], ["gnome-system-tools"], ["systemadm"], ["cockpit-desktop", "/system/services"]]
 
@@ -15,19 +20,20 @@ SERVICE_TOOLS = [["systemd-manager"], ["gnome-system-tools"], ["systemadm"], ["c
 class ServicesPanel(QtWidgets.QWidget):
     goto_pid = Signal(int)
 
-    def __init__(self, win8=False, parent=None):
+    def __init__(self, win8=False, tux=False, parent=None):
         super().__init__(parent)
         self.win8 = win8
+        self.tux = tux
         self.services = []
         self._loading = False
         layout = QtWidgets.QVBoxLayout(self)
         margin = 0 if win8 else 6
         layout.setContentsMargins(margin, margin, margin, margin)
-        self.tree = make_tree(["Name", "PID", "Description", "Status", "Group"])
+        self.tree = make_tree(["Name", "PID", "Description", "Status", "Group"] + (TUX_COLUMNS if tux else []))
         self.tree.sortByColumn(0, Qt.SortOrder.AscendingOrder)
         self.tree.customContextMenuRequested.connect(self._menu)
         header = self.tree.header()
-        for col, width in enumerate((150, 55, 260, 70, 120)):
+        for col, width in enumerate((150, 55, 260, 70, 120, 70, 70, 65, 80, 50, 70, 60)):
             header.resizeSection(col, width)
         self.sync = ItemSync(self.tree)
         layout.addWidget(self.tree, 1)
@@ -68,7 +74,7 @@ class ServicesPanel(QtWidgets.QWidget):
         if self._loading:
             return
         self._loading = True
-        run_async(svc_backend.list_services, self._loaded)
+        run_async(svc_backend.list_services, self._loaded, self)
 
     def _loaded(self, result, error):
         self._loading = False
@@ -87,6 +93,14 @@ class ServicesPanel(QtWidgets.QWidget):
                 set_cell(item, 2, svc.description)
                 set_cell(item, 3, svc.status, None, LEFT)
                 set_cell(item, 4, svc.group)
+                if self.tux:
+                    set_cell(item, 5, svc.startup)
+                    set_cell(item, 6, svc.sub_state)
+                    set_cell(item, 7, svc.type)
+                    set_cell(item, 8, fmt_bytes(svc.memory) if svc.memory >= 0 else "", svc.memory, RIGHT)
+                    set_cell(item, 9, str(svc.tasks) if svc.tasks >= 0 else "", svc.tasks, RIGHT)
+                    set_cell(item, 10, fmt_cpu_time(svc.cpu_ns / 1e9) if svc.cpu_ns >= 0 else "", svc.cpu_ns, RIGHT)
+                    set_cell(item, 11, str(svc.restarts) if svc.restarts else "", svc.restarts, RIGHT)
                 item.setToolTip(3, "{} — {}".format(svc.detail, svc.startup) if svc.startup else svc.detail)
             self.sync.end()
 
@@ -124,7 +138,7 @@ class ServicesPanel(QtWidgets.QWidget):
                 show_error(self, "Services", error)
             self.refresh()
 
-        run_async(lambda: svc_backend.control(svc, action), done)
+        run_async(lambda: svc_backend.control(svc, action), done, self)
 
     def _search(self, svc):
         from ..backend.actions import open_path
@@ -137,7 +151,7 @@ class ServicesPanel(QtWidgets.QWidget):
     def _open_tool(self, *_args):
         for cmd in SERVICE_TOOLS:
             if shutil.which(cmd[0]):
-                subprocess.Popen(cmd, start_new_session=True)
+                subprocess.Popen(cmd, start_new_session=True, env=user_env())
                 return
         self.refresh()
 

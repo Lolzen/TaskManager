@@ -1,39 +1,43 @@
 """Windows 7 Task Manager layout."""
 
+from .. import theme
 from ..qt import QtCore, QtGui, QtWidgets
 from ..widgets.dialogs import AboutDialog, RunDialog
 from ..widgets.services import ServicesPanel
+from ..widgets.tux import TuxPanel, tux_title
 from .lists import ApplicationsTab, ProcessesTab, UsersTab
 from .performance import NetworkingTab, PerformanceTab
 
 STYLE = """
-QMainWindow, QDialog { background: #F0F0F0; }
-QTabWidget::pane { border: 1px solid #898C95; background: #FFFFFF; top: -1px; }
+QMainWindow, QDialog { background: $w7_window; }
+QTabWidget::pane { border: 1px solid $w7_pane_border; background: $w7_pane; top: -1px; }
 QTabBar::tab {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #F2F2F2, stop:0.5 #EBEBEB, stop:0.51 #DDDDDD, stop:1 #CFCFCF);
-    border: 1px solid #898C95; border-bottom: none; padding: 3px 8px; margin-right: -1px; margin-top: 2px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $w7_g1, stop:0.5 $w7_g2, stop:0.51 $w7_g3, stop:1 $w7_g4);
+    border: 1px solid $w7_pane_border; border-bottom: none; padding: 3px 8px; margin-right: -1px; margin-top: 2px;
+    color: $text;
 }
-QTabBar::tab:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #EAF6FD, stop:0.5 #D9F0FC, stop:0.51 #BEE6FD, stop:1 #A7D9F5); }
-QTabBar::tab:selected { background: #FFFFFF; margin-top: 0px; padding-bottom: 5px; }
-QTreeWidget { border: 1px solid #828790; background: #FFFFFF; }
+QTabBar::tab:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $w7_h1, stop:0.5 $w7_h2, stop:0.51 $w7_h3, stop:1 $w7_h4); }
+QTabBar::tab:selected { background: $w7_pane; margin-top: 0px; padding-bottom: 5px; }
+QTreeWidget { border: 1px solid $w7_list_border; background: $base_bg; color: $text; }
 QTreeWidget::item { padding: 0px 2px; }
-QTreeWidget::item:selected { background: #3399FF; color: #FFFFFF; }
+QTreeWidget::item:selected { background: $w7_selected; color: $w7_selected_text; }
 QHeaderView::section {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFFFFF, stop:1 #F1F2F4);
-    border: none; border-right: 1px solid #D5D5D5; border-bottom: 1px solid #D5D5D5; padding: 2px 4px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $w7_header_top, stop:1 $w7_header_bottom);
+    border: none; border-right: 1px solid $w7_header_line; border-bottom: 1px solid $w7_header_line; padding: 2px 4px;
+    color: $text;
 }
 QPushButton {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #F2F2F2, stop:0.5 #EBEBEB, stop:0.51 #DDDDDD, stop:1 #CFCFCF);
-    border: 1px solid #707070; border-radius: 3px; padding: 3px 12px; min-height: 16px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $w7_g1, stop:0.5 $w7_g2, stop:0.51 $w7_g3, stop:1 $w7_g4);
+    border: 1px solid $w7_btn_border; border-radius: 3px; padding: 3px 12px; min-height: 16px; color: $text;
 }
-QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #EAF6FD, stop:0.5 #D9F0FC, stop:0.51 #BEE6FD, stop:1 #A7D9F5); border-color: #3C7FB1; }
-QPushButton:pressed { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E5F4FC, stop:0.5 #C4E5F6, stop:0.51 #98D1EF, stop:1 #68B3DB); border-color: #2C628B; }
-QPushButton:disabled { background: #F4F4F4; border-color: #ADB2B5; color: #838383; }
-QGroupBox { border: 1px solid #D5DFE5; border-radius: 3px; margin-top: 8px; padding-top: 4px; }
+QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $w7_h1, stop:0.5 $w7_h2, stop:0.51 $w7_h3, stop:1 $w7_h4); border-color: $w7_hover_border; }
+QPushButton:pressed { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $w7_p1, stop:0.5 $w7_p2, stop:0.51 $w7_p3, stop:1 $w7_p4); border-color: $w7_pressed_border; }
+QPushButton:disabled { background: $btn_disabled_bg; border-color: $btn_disabled_border; color: $disabled_text; }
+QGroupBox { border: 1px solid $w7_group_border; border-radius: 3px; margin-top: 8px; padding-top: 4px; }
 QGroupBox::title { subcontrol-origin: margin; left: 7px; padding: 0 2px; }
-QStatusBar { background: #F0F0F0; border-top: 1px solid #D7D7D7; }
-QStatusBar::item { border: none; border-right: 1px solid #C0C0C0; }
-QMenuBar { background: #F0F0F0; }
+QStatusBar { background: $w7_window; border-top: 1px solid $w7_status_line; }
+QStatusBar::item { border: none; border-right: 1px solid $w7_status_sep; }
+QMenuBar { background: $w7_window; }
 """
 
 
@@ -44,22 +48,26 @@ class Win7Window(QtWidgets.QMainWindow):
         super().__init__()
         self.controller = controller
         self.setObjectName("win7")
-        self.setWindowTitle("Windows Task Manager")
-        self.setStyleSheet(STYLE)
+        self.tux = controller.tux
+        self.setWindowTitle(tux_title("Windows Task Manager") if self.tux else "Windows Task Manager")
+        self.setStyleSheet(theme.css(STYLE))
         self.settings = QtCore.QSettings()
 
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.setDocumentMode(False)
         self.apps = ApplicationsTab()
-        self.procs = ProcessesTab()
-        self.services = ServicesPanel(win8=False)
-        self.perf = PerformanceTab()
-        self.net = NetworkingTab()
-        self.users = UsersTab()
+        self.procs = ProcessesTab(tux=self.tux)
+        self.services = ServicesPanel(win8=False, tux=self.tux)
+        self.perf = PerformanceTab(tux=self.tux)
+        self.net = NetworkingTab(tux=self.tux)
+        self.users = UsersTab(tux=self.tux)
+        self.tux_panel = TuxPanel() if self.tux else None
         for widget, title in ((self.apps, "Applications"), (self.procs, "Processes"),
                               (self.services, "Services"), (self.perf, "Performance"),
                               (self.net, "Networking"), (self.users, "Users")):
             self.tabs.addTab(widget, title)
+        if self.tux_panel is not None:
+            self.tabs.addTab(self.tux_panel, "Tux")
         central = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(central)
         lay.setContentsMargins(6, 6, 6, 4)
@@ -112,7 +120,7 @@ class Win7Window(QtWidgets.QMainWindow):
         self.act_full.setCheckable(True)
 
         view = mb.addMenu("&View")
-        view.addAction("&Refresh Now", c.sampler.refresh_now, QtGui.QKeySequence("F5"))
+        view.addAction("&Refresh Now", c.sampler.refresh_now).setShortcut(QtGui.QKeySequence("F5"))
         speed = view.addMenu("&Update Speed")
         group = QtGui.QActionGroup(speed)
         for name in ("High", "Normal", "Low", "Paused"):
@@ -138,7 +146,7 @@ class Win7Window(QtWidgets.QMainWindow):
         self.act_netcols = view.addAction("Show &Bytes Sent/Received History", self._set_net_lines)
         self.act_netcols.setCheckable(True)
         view.addSeparator()
-        view.addAction("Switch to Windows &8 Layout", lambda: c.switch_layout("win8"))
+        c.add_layout_menu(view, "win7")
 
         help_menu = mb.addMenu("&Help")
         help_menu.addAction("Task Manager &Help Topics", c.open_help)
@@ -153,7 +161,7 @@ class Win7Window(QtWidgets.QMainWindow):
         self.act_netcols.setEnabled(widget is self.net)
         self.settings.setValue("win7/tab", index)
         snap = self.controller.sampler.last
-        if snap is not None and widget in (self.apps, self.procs, self.users):
+        if snap is not None and widget in (self.apps, self.procs, self.users, self.tux_panel):
             widget.update_snapshot(snap)
 
     def _full_account(self, checked):
@@ -187,6 +195,8 @@ class Win7Window(QtWidgets.QMainWindow):
             self.procs.update_snapshot(snap)
         elif current is self.users:
             self.users.update_snapshot(snap)
+        elif current is not None and current is self.tux_panel:
+            self.tux_panel.update_snapshot(snap)
 
     def goto_process(self, pid):
         self.tabs.setCurrentWidget(self.procs)

@@ -4,44 +4,27 @@ import argparse
 import signal
 import sys
 
-from . import __version__
+from . import __version__, theme
 from .backend.history import AppHistory
 from .core import SamplerThread
 from .qt import QtCore, QtGui, QtWidgets, Qt
 
 HELP_URL = "https://github.com/Lolzen/TaskManager#readme"
-LAYOUTS = ("win7", "win8")
+LAYOUTS = ("win7", "win8", "win10")
+LAYOUT_NAMES = {"win7": "Windows &7", "win8": "Windows &8", "win10": "Windows 1&0"}
 
 
-def apply_light_palette(app):
-    """Both Task Managers are light themed regardless of the desktop theme."""
-    app.setStyle("Fusion")
-    pal = QtGui.QPalette()
-    roles = {
-        QtGui.QPalette.ColorRole.Window: "#F0F0F0",
-        QtGui.QPalette.ColorRole.WindowText: "#000000",
-        QtGui.QPalette.ColorRole.Base: "#FFFFFF",
-        QtGui.QPalette.ColorRole.AlternateBase: "#F7F7F7",
-        QtGui.QPalette.ColorRole.Text: "#000000",
-        QtGui.QPalette.ColorRole.Button: "#F0F0F0",
-        QtGui.QPalette.ColorRole.ButtonText: "#000000",
-        QtGui.QPalette.ColorRole.Highlight: "#3399FF",
-        QtGui.QPalette.ColorRole.HighlightedText: "#FFFFFF",
-        QtGui.QPalette.ColorRole.ToolTipBase: "#FFFFFF",
-        QtGui.QPalette.ColorRole.ToolTipText: "#575757",
-        QtGui.QPalette.ColorRole.Link: "#0066CC",
-        QtGui.QPalette.ColorRole.PlaceholderText: "#6D6D6D",
-    }
-    for role, color in roles.items():
-        pal.setColor(role, QtGui.QColor(color))
-    pal.setColor(QtGui.QPalette.ColorGroup.Disabled, QtGui.QPalette.ColorRole.Text, QtGui.QColor("#6D6D6D"))
-    pal.setColor(QtGui.QPalette.ColorGroup.Disabled, QtGui.QPalette.ColorRole.WindowText, QtGui.QColor("#6D6D6D"))
-    pal.setColor(QtGui.QPalette.ColorGroup.Disabled, QtGui.QPalette.ColorRole.ButtonText, QtGui.QColor("#838383"))
-    app.setPalette(pal)
+def apply_fonts(app):
     font = QtGui.QFont()
     font.setFamilies(["Segoe UI", "Selawik", "Noto Sans", "Open Sans", "DejaVu Sans", "Liberation Sans"])
     font.setPointSizeF(9)
     app.setFont(font)
+
+
+def apply_light_palette(app):
+    """The classic look: light colours regardless of the desktop theme."""
+    theme.apply(app, "light")
+    apply_fonts(app)
 
 
 def tray_pixmap(cpu):
@@ -60,11 +43,23 @@ def tray_pixmap(cpu):
 
 
 class Controller(QtCore.QObject):
-    def __init__(self, app, layout):
+    def __init__(self, app, layout, tux=None, theme_pref=None):
         super().__init__()
         self.app = app
         self.settings = QtCore.QSettings()
+        self.theme_pref = theme_pref or self.settings.value("theme", "system")
+        if self.theme_pref not in theme.THEMES:
+            self.theme_pref = "system"
+        self.settings.setValue("theme", self.theme_pref)
+        theme.apply(app, theme.resolve(self.theme_pref))
+        apply_fonts(app)
+        hints = QtGui.QGuiApplication.styleHints()
+        if hasattr(hints, "colorSchemeChanged"):  # Qt 6.5+: follow the desktop live
+            hints.colorSchemeChanged.connect(self._system_scheme_changed)
         self.sampler = SamplerThread(self)
+        self.tux = self.settings.value("tux", False, type=bool) if tux is None else tux
+        self.settings.setValue("tux", self.tux)
+        self.sampler.set_tux(self.tux)
         self.history = AppHistory()
         self.window = None
         self.always_on_top = self.settings.value("options/on_top", True, type=bool)
@@ -93,11 +88,14 @@ class Controller(QtCore.QObject):
     # -- layouts -------------------------------------------------------------
     def switch_layout(self, layout):
         old = self.window
-        if layout == "win8":
+        if layout == "win10":
+            from .win10.window import Win10Window as cls
+        elif layout == "win8":
             from .win8.window import Win8Window as cls
         else:
             from .win7.window import Win7Window as cls
         self.window = cls(self)
+        self.window.setProperty("theme", theme.current())
         self.window.setWindowIcon(QtGui.QIcon(tray_pixmap(60)))
         self._apply_on_top()
         if old is not None:
@@ -107,6 +105,65 @@ class Controller(QtCore.QObject):
             old.deleteLater()
         self.settings.setValue("layout", layout)
         self.window.show()
+
+    def add_layout_menu(self, menu, current):
+        """View > Layout submenu, shared by all layouts."""
+        sub = menu.addMenu("&Layout")
+        group = QtGui.QActionGroup(sub)
+        for layout in LAYOUTS:
+            act = sub.addAction(LAYOUT_NAMES[layout], lambda l=layout: self._switch_later(l))
+            act.setCheckable(True)
+            act.setChecked(layout == current)
+            group.addAction(act)
+        tux = menu.addAction("&Tux mode", lambda checked: self._tux_later(checked))
+        tux.setCheckable(True)
+        tux.setChecked(self.tux)
+        tux.setToolTip("Show everything Linux reports on top of the current layout")
+        themes = menu.addMenu("T&heme")
+        theme_group = QtGui.QActionGroup(themes)
+        for pref in theme.THEMES:
+            act = themes.addAction(theme.THEME_NAMES[pref], lambda p=pref: self._theme_later(p))
+            act.setCheckable(True)
+            act.setChecked(pref == self.theme_pref)
+            theme_group.addAction(act)
+        return sub
+
+    def _theme_later(self, pref):
+        QtCore.QTimer.singleShot(0, lambda: self.set_theme(pref))
+
+    def set_theme(self, pref):
+        """``system``, ``light`` or ``dark``; rebuilds the window in the new colours."""
+        self.theme_pref = pref
+        self.settings.setValue("theme", pref)
+        self._apply_theme()
+
+    def _apply_theme(self):
+        name = theme.resolve(self.theme_pref)
+        if name == theme.current() and self.window is not None and self.window.property("theme") == name:
+            return
+        theme.apply(self.app, name)
+        if self.window is not None:
+            self.switch_layout(self.window.LAYOUT)
+
+    def _system_scheme_changed(self, *_args):
+        if self.theme_pref == "system":
+            QtCore.QTimer.singleShot(0, self._apply_theme)
+
+    def _tux_later(self, enabled):
+        QtCore.QTimer.singleShot(0, lambda: self.set_tux(enabled))
+
+    def set_tux(self, enabled):
+        """Tux mode adds Linux-only information to whichever layout is active."""
+        self.tux = enabled
+        self.settings.setValue("tux", enabled)
+        self.sampler.set_tux(enabled)
+        if self.window is not None:
+            self.switch_layout(self.window.LAYOUT)
+
+    def _switch_later(self, layout):
+        # the old window owns the menu that triggered this; replace it after the event
+        if self.window is None or self.window.LAYOUT != layout:
+            QtCore.QTimer.singleShot(0, lambda: self.switch_layout(layout))
 
     def window_closed(self, window):
         if getattr(window, "_switching", False):
@@ -179,6 +236,10 @@ class Controller(QtCore.QObject):
     def _shutdown(self):
         self.history.save()
         self.sampler.stop()
+        # drop queued background work and give running tasks (systemctl, ...) a moment
+        pool = QtCore.QThreadPool.globalInstance()
+        pool.clear()
+        pool.waitForDone(3000)
         if self.tray is not None:
             self.tray.hide()
 
@@ -191,22 +252,36 @@ def parse_args(argv):
                        help="shortcut for --layout win7")
     group.add_argument("--win8", dest="layout", action="store_const", const="win8",
                        help="shortcut for --layout win8")
+    group.add_argument("--win10", dest="layout", action="store_const", const="win10",
+                       help="shortcut for --layout win10")
+    tux = parser.add_mutually_exclusive_group()
+    tux.add_argument("--tux", dest="tux", action="store_true", default=None,
+                     help="Tux mode: also show the extra information Linux provides")
+    tux.add_argument("--no-tux", dest="tux", action="store_false", help="turn Tux mode off")
+    parser.add_argument("--theme", choices=theme.THEMES,
+                        help="colour scheme: follow the desktop (system), light or dark")
     parser.add_argument("--version", action="version", version="%(prog)s " + __version__)
     return parser.parse_known_args(argv)
 
 
+def _log_exception(exc_type, exc, tb):
+    """PyQt6 aborts on an exception escaping a slot unless a hook is set."""
+    import traceback
+    traceback.print_exception(exc_type, exc, tb)
+
+
 def main(argv=None):
     args, qt_args = parse_args(sys.argv[1:] if argv is None else argv)
+    sys.excepthook = _log_exception
     QtCore.QCoreApplication.setOrganizationName("TaskManager")
     QtCore.QCoreApplication.setApplicationName("TaskManager")
     app = QtWidgets.QApplication([sys.argv[0]] + qt_args)
     app.setQuitOnLastWindowClosed(False)
     app.setDesktopFileName("taskmanager")
-    apply_light_palette(app)
     layout = args.layout or QtCore.QSettings().value("layout", "win8")
     if layout not in LAYOUTS:
         layout = "win8"
-    controller = Controller(app, layout)
+    controller = Controller(app, layout, args.tux, args.theme)
     signal.signal(signal.SIGINT, lambda *_: app.quit())
     # wake the interpreter regularly so Ctrl+C is handled
     keepalive = QtCore.QTimer()
